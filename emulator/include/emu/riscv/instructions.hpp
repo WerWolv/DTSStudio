@@ -4,18 +4,14 @@
 
 namespace ds::emu::riscv::instr {
 
-    namespace i {
-
-        struct Prefix {
-            constexpr static auto Value = 0b11;
-        };
+    namespace base {
 
         namespace fields {
 
-            struct OpType {
-                constexpr explicit OpType(uint32_t instruction) : optype(util::extract_bits<0, 1>(instruction)) {}
+            struct Quadrant {
+                constexpr explicit Quadrant(uint32_t instruction) : quadrant(util::extract_bits<0, 1>(instruction)) {}
 
-                uint8_t optype;
+                uint8_t quadrant;
             };
 
             struct Opcode {
@@ -90,49 +86,49 @@ namespace ds::emu::riscv::instr {
         namespace type {
             using namespace fields;
 
-            struct R : OpType, Opcode, Rd, Funct3, Rs1, Rs2, Funct7 {
-                constexpr R(uint32_t instruction) :
-                    OpType(instruction), Opcode(instruction), Rd(instruction), Funct3(instruction), Rs1(instruction), Rs2(instruction), Funct7(instruction) {}
+            struct R : Quadrant, Opcode, Rd, Funct3, Rs1, Rs2, Funct7 {
+                constexpr explicit R(uint32_t instruction) :
+                    Quadrant(instruction), Opcode(instruction), Rd(instruction), Funct3(instruction), Rs1(instruction), Rs2(instruction), Funct7(instruction) {}
             };
 
-            struct R4 : OpType, Opcode, Rd, Funct3, Rs1, Rs2, Funct2, Rs3 {
-                constexpr R4(uint32_t instruction) :
-                    OpType(instruction), Opcode(instruction), Rd(instruction), Funct3(instruction), Rs1(instruction), Rs2(instruction), Funct2(instruction), Rs3(instruction) {}
+            struct R4 : Quadrant, Opcode, Rd, Funct3, Rs1, Rs2, Funct2, Rs3 {
+                constexpr explicit R4(uint32_t instruction) :
+                    Quadrant(instruction), Opcode(instruction), Rd(instruction), Funct3(instruction), Rs1(instruction), Rs2(instruction), Funct2(instruction), Rs3(instruction) {}
             };
 
-            struct I : OpType, Opcode, Rd, Funct3, Rs1, Rs2, Imm<0, Bits{ 20,31 }> {
-                constexpr I(uint32_t instruction) :
-                    OpType(instruction), Opcode(instruction), Rd(instruction), Funct3(instruction), Rs1(instruction), Rs2(instruction), Imm(instruction) {}
+            struct I : Quadrant, Opcode, Rd, Funct3, Rs1, Rs2, Imm<0, Bits{ 20,31 }> {
+                constexpr explicit I(uint32_t instruction) :
+                    Quadrant(instruction), Opcode(instruction), Rd(instruction), Funct3(instruction), Rs1(instruction), Rs2(instruction), Imm(instruction) {}
             };
 
-            struct S : OpType, Opcode, Funct3, Rs1, Rs2, Imm<0, Bits{7,11}, Bits{25,31}> {
-                constexpr S(uint32_t instruction) :
-                    OpType(instruction), Opcode(instruction), Funct3(instruction), Rs1(instruction), Rs2(instruction), Imm(instruction) {}
+            struct S : Quadrant, Opcode, Funct3, Rs1, Rs2, Imm<0, Bits{7,11}, Bits{25,31}> {
+                constexpr explicit S(uint32_t instruction) :
+                    Quadrant(instruction), Opcode(instruction), Funct3(instruction), Rs1(instruction), Rs2(instruction), Imm(instruction) {}
             };
 
-            struct B : OpType, Opcode, Funct3, Rs1, Rs2, Imm<1, Bits{8,11}, Bits{25, 30}, Bits{7,7}, Bits{31,31}> {
-                constexpr B(uint32_t instruction) :
-                    OpType(instruction), Opcode(instruction), Funct3(instruction), Rs1(instruction), Rs2(instruction), Imm(instruction) {}
+            struct B : Quadrant, Opcode, Funct3, Rs1, Rs2, Imm<1, Bits{8,11}, Bits{25, 30}, Bits{7,7}, Bits{31,31}> {
+                constexpr explicit B(uint32_t instruction) :
+                    Quadrant(instruction), Opcode(instruction), Funct3(instruction), Rs1(instruction), Rs2(instruction), Imm(instruction) {}
             };
 
-            struct U : OpType, Opcode, Rd, Imm<12, Bits{12,31}> {
-                constexpr U(uint32_t instruction) :
-                    OpType(instruction), Opcode(instruction), Rd(instruction), Imm(instruction) {}
+            struct U : Quadrant, Opcode, Rd, Imm<12, Bits{12,31}> {
+                constexpr explicit U(uint32_t instruction) :
+                    Quadrant(instruction), Opcode(instruction), Rd(instruction), Imm(instruction) {}
             };
 
-            struct J : OpType, Opcode, Rd, Imm<1, Bits{21,30}, Bits{20,20}, Bits{12,19}, Bits{31,31}> {
-                constexpr J(uint32_t instruction) :
-                    OpType(instruction), Opcode(instruction), Rd(instruction), Imm(instruction) {}
+            struct J : Quadrant, Opcode, Rd, Imm<1, Bits{21,30}, Bits{20,20}, Bits{12,19}, Bits{31,31}> {
+                constexpr explicit J(uint32_t instruction) :
+                    Quadrant(instruction), Opcode(instruction), Rd(instruction), Imm(instruction) {}
             };
         }
-
-
 
         template<typename Type_, std::uint8_t OpcodeBits>
         struct Opcode {
             constexpr static auto Value = OpcodeBits;
             using Type = Type_;
         };
+
+        using Quadrant = Opcode<std::uint32_t, 0b11>;
 
         using LOAD      = Opcode<type::I,  0b00'000>;
         using STORE     = Opcode<type::S,  0b01'000>;

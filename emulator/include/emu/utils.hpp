@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <concepts>
 
 namespace ds::emu::util {
 
@@ -54,6 +55,20 @@ namespace ds::emu::util {
         } else {
             return static_cast<SignedT>(value);
         }
+    }
+
+    constexpr auto to_byte_span(auto &value) -> std::span<std::uint8_t> {
+        return {
+            reinterpret_cast<std::uint8_t *>(&value),
+            sizeof(value)
+        };
+    }
+
+    constexpr auto to_byte_span(const auto &value) -> std::span<const std::uint8_t> {
+        return {
+            reinterpret_cast<const std::uint8_t *>(&value),
+            sizeof(value)
+        };
     }
 
 }

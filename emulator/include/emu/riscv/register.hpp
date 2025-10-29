@@ -15,6 +15,23 @@ namespace ds::emu::riscv {
 
         constexpr virtual ~RegisterBase() = default;
 
+        constexpr auto operator+=(Type type) -> RegisterBase& {
+            return this->operator=(*this + type);
+        }
+        constexpr auto operator-=(Type type) -> RegisterBase& {
+            return this->operator=(*this - type);
+        }
+        constexpr auto operator|=(Type type) -> RegisterBase& {
+            return this->operator=(*this | type);
+        }
+        constexpr auto operator&=(Type type) -> RegisterBase& {
+            return this->operator=(*this & type);
+        }
+
+        constexpr auto operator=(std::derived_from<RegisterBase> auto &other) -> RegisterBase& {
+            return operator=(static_cast<T>(other));
+        }
+
         constexpr virtual auto operator=(Type type) -> RegisterBase& = 0;
         constexpr virtual operator Type() const = 0;
     };
@@ -22,9 +39,24 @@ namespace ds::emu::riscv {
 
     class GeneralPurposeRegister : public Register {
     public:
-
         constexpr auto operator=(Type type) -> GeneralPurposeRegister& final {
             m_value = type;
+            return *this;
+        }
+
+        constexpr operator Type() const final {
+            return m_value;
+        }
+
+    private:
+        Type m_value = 0x00;
+    };
+
+    class ReadOnlyRegister : public Register {
+    public:
+        explicit ReadOnlyRegister(Type value) : m_value(value) {}
+        constexpr auto operator=(Type type) -> ReadOnlyRegister& final {
+            std::ignore = type;
             return *this;
         }
 
