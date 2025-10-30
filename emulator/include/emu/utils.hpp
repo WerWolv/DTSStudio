@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <limits>
 #include <concepts>
+#include <span>
 
 namespace ds::emu::util {
 
@@ -13,9 +14,18 @@ namespace ds::emu::util {
     template<> struct SizedType<4> { using Signed = std::int32_t; using Unsigned = std::uint32_t; };
     template<> struct SizedType<8> { using Signed = std::int64_t; using Unsigned = std::uint64_t; };
 
+
+    template<std::uint8_t BitNumber, typename T = std::uint32_t>
+    constexpr auto bit() -> T {
+        return (T(1) << BitNumber);
+    }
+
     template<std::uint8_t Size, typename T = std::uint32_t>
     constexpr auto mask() -> T {
-        return (T(1) << Size) - 1;
+        if constexpr (Size == sizeof(T) * 8)
+            return ~T(0);
+        else
+            return (T(1) << Size) - 1;
     }
 
     template<std::uint8_t From, std::uint8_t To>
@@ -70,5 +80,20 @@ namespace ds::emu::util {
             sizeof(value)
         };
     }
+
+
+    template<typename T>
+    struct FunctionSignature { };
+
+    template<typename R, typename... Args>
+    struct FunctionSignature<R(*)(Args...)> {
+    public:
+        using Signature = R(Args...);
+
+        using Arguments = std::tuple<Args...>;
+        using ReturnType = R;
+
+        constexpr static auto ArgumentCount = sizeof...(Args);
+    };
 
 }

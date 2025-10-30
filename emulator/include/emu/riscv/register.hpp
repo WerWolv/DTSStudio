@@ -28,8 +28,25 @@ namespace ds::emu::riscv {
             return this->operator=(*this & type);
         }
 
+        constexpr auto get() const -> Type { return operator Type(); }
+
         constexpr auto operator=(std::derived_from<RegisterBase> auto &other) -> RegisterBase& {
             return operator=(static_cast<T>(other));
+        }
+
+        constexpr auto set_bit(std::uint8_t index, bool value) -> void {
+            const auto bit = 1U << index;
+
+            if (value)
+                (*this) |= bit;
+            else
+                (*this) &= ~bit;
+        }
+
+        constexpr auto get_bit(std::uint8_t index) -> bool {
+            const auto bit = 1ULL << index;
+
+            return (*this) & bit;
         }
 
         constexpr virtual auto operator=(Type type) -> RegisterBase& = 0;

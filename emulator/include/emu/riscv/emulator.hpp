@@ -3,7 +3,8 @@
 #include <array>
 #include <cstdint>
 
-#include "core.hpp"
+#include <emu/riscv/core.hpp>
+#include <emu/riscv/machine_mode_firmware.hpp>
 
 namespace ds::emu::riscv {
 
@@ -18,10 +19,25 @@ namespace ds::emu::riscv {
 
         auto step() -> StepResult {
             auto &core = m_cores[m_current_core];
-            const auto result = core.step();
 
-            if (result != StepResult::Ok) {
-                printf("CORE %lu encountered error %d at PC:0x%08X\n", m_current_core, (uint32_t)result, (uint32_t)core.pc());
+            const auto result = core.step();
+            switch (result) {
+                case StepResult::Ok:
+                    break;
+                default:
+                    printf("CORE %lu encountered error %d at PC:0x%08X\n", m_current_core, (uint32_t)result, (uint32_t)core.pc());
+            }
+
+            if (core.get_privilege_level() == PrivilegeLevel::Machine) {
+                const auto [error, return_value] = m_machine_mode_firmware.sbi_call(
+                    core.a7(), core.a6(),
+                    core.a0(), core.a1(), core.a2(), core.a3(), core.a4(), core.a5()
+                );
+
+                core.a0() = static_cast<std::uint32_t>(error);
+                core.a1() = return_value;
+
+                core.set_privilege_level(PrivilegeLevel::Supervisor);
             }
 
             m_current_core = (m_current_core + 1) % NumCores;
@@ -33,11 +49,13 @@ namespace ds::emu::riscv {
             return m_address_space;
         }
 
-        auto cores() -> std::array<Core, NumCores> {
+        auto cores() -> std::array<Core, NumCores>& {
             return m_cores;
         }
 
     private:
+        MachineModeFirmware m_machine_mode_firmware;
+
         AddressSpace<std::uint32_t> m_address_space;
         std::array<Core, NumCores> m_cores;
         std::size_t m_current_core = 0;
