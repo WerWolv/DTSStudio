@@ -23,7 +23,7 @@ namespace ds::emu::riscv {
                     }
                 }
                 else if (instruction.imm == 0b000000000001) // EBREAK
-                    return StepResult::Unimplemented;
+                    return StepResult::Break;
                 else if (instruction.imm == 0b000100100000) { // SFENCE.VMA
                     m_address_space->invalidate();
                     return StepResult::Ok;

@@ -25,7 +25,8 @@ namespace ds::emu::riscv {
         MisalignedAccess,
         ECallUser,
         ECallSupervisor,
-        Stopped
+        Stopped,
+        Break
     };
 
     enum class PrivilegeLevel {

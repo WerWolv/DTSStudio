@@ -18,11 +18,9 @@ auto main() -> int {
     using namespace ds::literals;
 
     emu::riscv::Emulator<1> emulator;
-    emulator.cores()[0].a1() = 512_MiB - 1_MiB;
 
     emu::dev::Ram ram(512_MiB);
-    ram.write(0x00, LinuxKernel);
-    ram.write(512_MiB - 1_MiB, DeviceTreeBlob);
+
 
     emu::dev::UART8250 uart8250;
     emu::dev::riscv::MMU<std::uint32_t> riscv_mmu;
@@ -31,8 +29,17 @@ auto main() -> int {
     emulator.address_space().map(0xF400'0000, &uart8250);
     emulator.address_space().add_address_translator(&riscv_mmu);
 
+    emulator.power_up();
+
+    ram.write(0x00, LinuxKernel);
+
+    constexpr static auto DeviceTreeBlobLoadAddress = 512_MiB - 1_MiB;
+    ram.write(DeviceTreeBlobLoadAddress, DeviceTreeBlob);
+    emulator.cores()[0].a1() = DeviceTreeBlobLoadAddress;
+
     for (;;) {
 
-        emulator.step();
+        if (emulator.step() == emu::riscv::StepResult::Break)
+            break;
     }
 }
