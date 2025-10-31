@@ -6,6 +6,9 @@
 namespace ds::emu::riscv {
 
     auto Core::handle_system(const instr::base::type::I &instruction) -> StepResult {
+        const std::uint32_t old       = csr(instruction.imm);
+        const std::uint32_t write_val = x(instruction.rs1);
+
         switch (instruction.funct3) {
             case 0b000: // PRIV
                 if (instruction.imm == 0b000000000000) { // ECALL
@@ -31,28 +34,38 @@ namespace ds::emu::riscv {
                 else
                     return StepResult::InvalidInstruction;
             case 0b001: // CSRRW
-                if (instruction.rd != 0) x(instruction.rd) = csr(instruction.imm);
-                csr(instruction.imm) = x(instruction.rs1);
+                csr(instruction.imm) = write_val;
+                if (instruction.rd != 0)
+                    x(instruction.rd) = old;
                 return StepResult::Ok;
             case 0b101: // CSRRWI
-                if (instruction.rd != 0) x(instruction.rd) = csr(instruction.imm);
-                csr(instruction.imm) = instruction.rs1;
+                csr(instruction.imm) = instruction.rs1; // uimm[4:0]
+                if (instruction.rd != 0)
+                    x(instruction.rd) = old;
                 return StepResult::Ok;
             case 0b010: // CSRRS
-                if (instruction.rd  != 0) x(instruction.rd) = csr(instruction.imm);
-                if (instruction.rs1 != 0) csr(instruction.imm) |= x(instruction.rs1);
+                if (instruction.rs1 != 0)
+                    csr(instruction.imm) = old | write_val;
+                if (instruction.rd != 0)
+                    x(instruction.rd) = old;
                 return StepResult::Ok;
             case 0b110: // CSRRSI
-                if (instruction.rd  != 0) x(instruction.rd) = csr(instruction.imm);
-                if (instruction.rs1 != 0) csr(instruction.imm) |= instruction.rs1;
+                if (instruction.rs1 != 0)
+                    csr(instruction.imm) = old | instruction.rs1;
+                if (instruction.rd != 0)
+                    x(instruction.rd) = old;
                 return StepResult::Ok;
             case 0b011: // CSRRC
-                if (instruction.rd  != 0) x(instruction.rd) = csr(instruction.imm);
-                if (instruction.rs1 != 0) csr(instruction.imm) &= ~x(instruction.rs1);
+                if (instruction.rs1 != 0)
+                    csr(instruction.imm) = old & ~write_val;
+                if (instruction.rd != 0)
+                    x(instruction.rd) = old;
                 return StepResult::Ok;
             case 0b111: // CSRRCI
-                if (instruction.rd  != 0) x(instruction.rd) = csr(instruction.imm);
-                if (instruction.rs1 != 0) csr(instruction.imm) &= ~instruction.rs1;
+                if (instruction.rs1 != 0)
+                    csr(instruction.imm) = old & ~instruction.rs1;
+                if (instruction.rd != 0)
+                    x(instruction.rd) = old;
                 return StepResult::Ok;
             default:
                 return StepResult::Unimplemented;
