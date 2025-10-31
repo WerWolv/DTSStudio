@@ -9,7 +9,7 @@
 
 #include <emu/core.hpp>
 #include <emu/address_space.hpp>
-#include <emu/riscv/register.hpp>
+#include <emu/register.hpp>
 #include <emu/riscv/instructions.hpp>
 #include <emu/utils.hpp>
 
@@ -19,11 +19,13 @@ namespace ds::emu::riscv {
         Ok,
         Unimplemented,
         InvalidInstruction,
+        InvalidFetch,
         InvalidRead,
         InvalidWrite,
         MisalignedAccess,
         ECallUser,
-        ECallSupervisor
+        ECallSupervisor,
+        Stopped
     };
 
     enum class PrivilegeLevel {
@@ -32,6 +34,8 @@ namespace ds::emu::riscv {
         Hypervisor,
         Machine
     };
+
+    using Register = RegisterBase<std::uint32_t>;
 
     class Core : public emu::Core {
     public:
@@ -67,7 +71,7 @@ namespace ds::emu::riscv {
             }
         }
 
-        constexpr auto csr(std::uint16_t number) -> GeneralPurposeRegister& {
+        constexpr auto csr(std::uint16_t number) -> Register& {
             return m_csrs[number];
         }
 
@@ -246,12 +250,12 @@ namespace ds::emu::riscv {
         std::uint8_t m_hart = 0;
         AddressSpace<std::uint32_t> *m_address_space = nullptr;
 
-        ZeroRegister m_zeroRegister;
-        std::array<GeneralPurposeRegister, 31> m_registers = {};
-        GeneralPurposeRegister m_program_counter = {};
+        ZeroRegister<std::uint32_t> m_zeroRegister;
+        std::array<GeneralPurposeRegister<std::uint32_t>, 31> m_registers = {};
+        GeneralPurposeRegister<std::uint32_t> m_program_counter = {};
         std::uint32_t m_lr_reservation = 0x00;
 
-        std::array<GeneralPurposeRegister, 4096> m_csrs;
+        std::array<GeneralPurposeRegister<std::uint32_t>, 4096> m_csrs;
         PrivilegeLevel m_privilege_level = PrivilegeLevel::Supervisor;
     };
 

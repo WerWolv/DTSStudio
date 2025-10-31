@@ -55,8 +55,6 @@ namespace ds::emu::util {
         static_assert(N <= std::numeric_limits<T>::digits, "Bit width N exceeds type width");
 
         using SignedT = std::make_signed_t<T>;
-        constexpr auto total_bits = std::numeric_limits<T>::digits;
-
         constexpr T sign_bit = T(1) << (N - 1);
 
         if (value & sign_bit) {
@@ -92,6 +90,19 @@ namespace ds::emu::util {
 
         using Arguments = std::tuple<Args...>;
         using ReturnType = R;
+        using Class = void;
+
+        constexpr static auto ArgumentCount = sizeof...(Args);
+    };
+
+    template<typename ClassType, typename R, typename... Args>
+    struct FunctionSignature<R(ClassType::*)(Args...)> {
+    public:
+        using Signature = R(Args...);
+
+        using Arguments = std::tuple<Args...>;
+        using ReturnType = R;
+        using Class = ClassType;
 
         constexpr static auto ArgumentCount = sizeof...(Args);
     };

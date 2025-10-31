@@ -6,7 +6,7 @@
 #include <array>
 #include <utility>
 
-namespace ds::emu::riscv {
+namespace ds::emu {
 
     template<std::integral T>
     class RegisterBase {
@@ -52,47 +52,49 @@ namespace ds::emu::riscv {
         constexpr virtual auto operator=(Type type) -> RegisterBase& = 0;
         constexpr virtual operator Type() const = 0;
     };
-    using Register = RegisterBase<uint32_t>;
 
-    class GeneralPurposeRegister : public Register {
+    template<std::integral T>
+    class GeneralPurposeRegister : public RegisterBase<T> {
     public:
-        constexpr auto operator=(Type type) -> GeneralPurposeRegister& final {
+        constexpr auto operator=(T type) -> GeneralPurposeRegister& final {
             m_value = type;
             return *this;
         }
 
-        constexpr operator Type() const final {
+        constexpr operator T() const final {
             return m_value;
         }
 
     private:
-        Type m_value = 0x00;
+        T m_value = 0x00;
     };
 
-    class ReadOnlyRegister : public Register {
+    template<typename T>
+    class ReadOnlyRegister : public RegisterBase<T> {
     public:
-        explicit ReadOnlyRegister(Type value) : m_value(value) {}
-        constexpr auto operator=(Type type) -> ReadOnlyRegister& final {
+        explicit ReadOnlyRegister(T value) : m_value(value) {}
+        constexpr auto operator=(T type) -> ReadOnlyRegister& final {
             std::ignore = type;
             return *this;
         }
 
-        constexpr operator Type() const final {
+        constexpr operator T() const final {
             return m_value;
         }
 
     private:
-        Type m_value = 0x00;
+        T m_value = 0x00;
     };
 
-    class ZeroRegister : public Register {
+    template<typename T>
+    class ZeroRegister : public RegisterBase<T> {
     public:
-        constexpr auto operator=(Type type) -> ZeroRegister& final {
+        constexpr auto operator=(T type) -> ZeroRegister& final {
             std::ignore = type;
             return *this;
         }
 
-        constexpr operator Type() const final {
+        constexpr operator T() const final {
             return 0x00;
         }
     };

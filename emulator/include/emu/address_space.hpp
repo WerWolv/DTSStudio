@@ -28,6 +28,7 @@ namespace ds::emu {
 
         virtual auto read(Offset offset, std::span<std::uint8_t> buffer) -> AccessResult = 0;
         virtual auto write(Offset offset, std::span<const std::uint8_t> buffer) -> AccessResult = 0;
+        virtual auto reset() -> void = 0;
 
         [[nodiscard]] constexpr auto size() const noexcept -> std::size_t { return m_size; }
 
@@ -114,6 +115,13 @@ namespace ds::emu {
         constexpr auto invalidate() -> void {
             for (const auto &entry : m_address_translators) {
                 entry->invalidate();
+            }
+        }
+
+        constexpr auto reset() -> void {
+            this->invalidate();
+            for (const auto &entry : m_peripherals) {
+                entry.peripheral->reset();
             }
         }
 

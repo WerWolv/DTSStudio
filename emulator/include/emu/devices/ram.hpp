@@ -20,6 +20,10 @@ namespace ds::emu::dev {
             return AccessResult::Ok;
         }
 
+        auto reset() -> void final {
+            std::memset(m_data.data(), 0x00, m_data.size());
+        }
+
     private:
         std::vector<std::uint8_t> m_data;
     };

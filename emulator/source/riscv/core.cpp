@@ -101,7 +101,7 @@ namespace ds::emu::riscv {
     auto Core::handle_store(const instr::base::type::S &instruction) -> StepResult {
         const auto offset = util::sign_extend<std::uint32_t, 12>(instruction.imm);
         const auto address = x(instruction.rs1) + offset;
-        const auto width = 1U << (instruction.funct3 & 0b011);
+        const auto width = 1U << util::extract_bits<0, 1>(instruction.funct3);
 
         switch (width) {
             case 1:
@@ -424,9 +424,13 @@ namespace ds::emu::riscv {
                 const auto aq    = util::extract_bits<1, 1>(instruction.funct7);
                 const auto funct5 = util::extract_bits<2, 5>(instruction.funct7);
 
+                std::ignore = rl;
+                std::ignore = aq;
+
+                const std::uint32_t address = x(instruction.rs1);
+                const std::uint32_t value   = x(instruction.rs2);
                 switch (funct5) {
                     case 0b00010: { // LR.W
-                        const std::uint32_t address = x(instruction.rs1);
                         if (address % 4 != 0)
                             return StepResult::MisalignedAccess;
 
@@ -444,7 +448,6 @@ namespace ds::emu::riscv {
                         return StepResult::Ok;
                     }
                     case 0b00011: { // SC.W
-                        const std::uint32_t address = x(instruction.rs1);
                         if (address % 4 != 0)
                             return StepResult::MisalignedAccess;
 
@@ -457,7 +460,6 @@ namespace ds::emu::riscv {
                         if (m_lr_reservation != (*physical_address | 0b1))
                             return StepResult::Ok;
 
-                        const std::uint32_t value = x(instruction.rs2);
                         const auto result = write<std::uint32_t>(address, value);
                         if (result != AccessResult::Ok)
                             return StepResult::InvalidWrite;
@@ -470,100 +472,100 @@ namespace ds::emu::riscv {
                         return StepResult::Ok;
                     }
                     case 0b00001: { // AMOSWAP.W
-                        const auto result = read<std::uint32_t>(x(instruction.rs1));
+                        const auto result = read<std::uint32_t>(address);
                         if (!result.has_value())
                             return StepResult::InvalidRead;
 
-                        if (write<std::uint32_t>(x(instruction.rs1), x(instruction.rs2)) != AccessResult::Ok)
+                        if (write<std::uint32_t>(address, value) != AccessResult::Ok)
                             return StepResult::InvalidWrite;
 
                         x(instruction.rd) = *result;
                         return StepResult::Ok;
                     }
                     case 0b00000: { // AMOADD.W
-                        const auto result = read<std::uint32_t>(x(instruction.rs1));
+                        const auto result = read<std::uint32_t>(address);
                         if (!result.has_value())
                             return StepResult::InvalidRead;
 
                         x(instruction.rd) = *result;
-                        if (write<std::uint32_t>(x(instruction.rs1), *result + x(instruction.rd)) != AccessResult::Ok)
+                        if (write<std::uint32_t>(address, *result +value) != AccessResult::Ok)
                             return StepResult::InvalidWrite;
 
                         return StepResult::Ok;
                     }
                     case 0b00100: { // AMOXOR.W
-                        const auto result = read<std::uint32_t>(x(instruction.rs1));
+                        const auto result = read<std::uint32_t>(address);
                         if (!result.has_value())
                             return StepResult::InvalidRead;
 
                         x(instruction.rd) = *result;
-                        if (write<std::uint32_t>(x(instruction.rs1), *result ^ x(instruction.rd)) != AccessResult::Ok)
+                        if (write<std::uint32_t>(address, *result ^ value) != AccessResult::Ok)
                             return StepResult::InvalidWrite;
 
                         return StepResult::Ok;
                     }
                     case 0b01100: { // AMOAND.W
-                        const auto result = read<std::uint32_t>(x(instruction.rs1));
+                        const auto result = read<std::uint32_t>(address);
                         if (!result.has_value())
                             return StepResult::InvalidRead;
 
                         x(instruction.rd) = *result;
-                        if (write<std::uint32_t>(x(instruction.rs1), *result & x(instruction.rd)) != AccessResult::Ok)
+                        if (write<std::uint32_t>(address, *result & value) != AccessResult::Ok)
                             return StepResult::InvalidWrite;
 
                         return StepResult::Ok;
                     }
                     case 0b01000: { // AMOOR.W
-                        const auto result = read<std::uint32_t>(x(instruction.rs1));
+                        const auto result = read<std::uint32_t>(address);
                         if (!result.has_value())
                             return StepResult::InvalidRead;
 
                         x(instruction.rd) = *result;
-                        if (write<std::uint32_t>(x(instruction.rs1), *result | x(instruction.rd)) != AccessResult::Ok)
+                        if (write<std::uint32_t>(address, *result | value) != AccessResult::Ok)
                             return StepResult::InvalidWrite;
 
                         return StepResult::Ok;
                     }
                     case 0b10000: { // AMOMIN.W
-                        const auto result = read<std::uint32_t>(x(instruction.rs1));
+                        const auto result = read<std::uint32_t>(address);
                         if (!result.has_value())
                             return StepResult::InvalidRead;
 
                         x(instruction.rd) = *result;
-                        if (write<std::uint32_t>(x(instruction.rs1), std::min<std::int32_t>(*result, x(instruction.rd))) != AccessResult::Ok)
+                        if (write<std::uint32_t>(address, std::min<std::int32_t>(*result, value)) != AccessResult::Ok)
                             return StepResult::InvalidWrite;
 
                         return StepResult::Ok;
                     }
                     case 0b10100: { // AMOMAX.W
-                        const auto result = read<std::uint32_t>(x(instruction.rs1));
+                        const auto result = read<std::uint32_t>(address);
                         if (!result.has_value())
                             return StepResult::InvalidRead;
 
                         x(instruction.rd) = *result;
-                        if (write<std::uint32_t>(x(instruction.rs1), std::max<std::int32_t>(*result, x(instruction.rd))) != AccessResult::Ok)
+                        if (write<std::uint32_t>(address, std::max<std::int32_t>(*result, value)) != AccessResult::Ok)
                             return StepResult::InvalidWrite;
 
                         return StepResult::Ok;
                     }
                     case 0b11000: { // AMOMINU.W
-                        const auto result = read<std::uint32_t>(x(instruction.rs1));
+                        const auto result = read<std::uint32_t>(address);
                         if (!result.has_value())
                             return StepResult::InvalidRead;
 
                         x(instruction.rd) = *result;
-                        if (write<std::uint32_t>(x(instruction.rs1), std::min<std::uint32_t>(*result, x(instruction.rd))) != AccessResult::Ok)
+                        if (write<std::uint32_t>(address, std::min<std::uint32_t>(*result, value)) != AccessResult::Ok)
                             return StepResult::InvalidWrite;
 
                         return StepResult::Ok;
                     }
                     case 0b11100: { // AMOMAXU.W
-                        const auto result = read<std::uint32_t>(x(instruction.rs1));
+                        const auto result = read<std::uint32_t>(address);
                         if (!result.has_value())
                             return StepResult::InvalidRead;
 
                         x(instruction.rd) = *result;
-                        if (write<std::uint32_t>(x(instruction.rs1), std::max<std::uint32_t>(*result, x(instruction.rd))) != AccessResult::Ok)
+                        if (write<std::uint32_t>(address, std::max<std::uint32_t>(*result, value)) != AccessResult::Ok)
                             return StepResult::InvalidWrite;
 
                         return StepResult::Ok;
@@ -676,7 +678,7 @@ namespace ds::emu::riscv {
             if (result == StepResult::InvalidInstruction)
                 scause() = 2;
         } else {
-            result = StepResult::InvalidRead;
+            result = StepResult::InvalidFetch;
         }
 
         switch (result) {
@@ -684,6 +686,10 @@ namespace ds::emu::riscv {
                 break;
             case StepResult::ECallSupervisor: // ECALL from Supervisor mode, delegate it to machine mode
                 set_privilege_level(PrivilegeLevel::Machine);
+                return StepResult::Ok;
+            case StepResult::ECallUser: // ECALL from User mode, jump to supervisor
+                set_privilege_level(PrivilegeLevel::Supervisor);
+                // TODO: trap
                 return StepResult::Ok;
             default:
                 this->trap();
