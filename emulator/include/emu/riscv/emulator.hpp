@@ -18,20 +18,18 @@ namespace ds::emu::riscv {
             }
         }
 
-        auto step() -> StepResult {
+        auto step() -> std::expected<void, ExceptionCause> {
             if (m_in_reset) [[unlikely]]
-                return StepResult::Stopped;
+                return std::unexpected(ExceptionCause::CoreStopped);
 
             auto &core = m_cores[m_current_core];
-            const auto curr_pc = core.pc();
+            const std::uint32_t curr_pc = core.pc();
 
             // Step the core one instruction forward
             const auto result = core.step();
-            switch (result) {
-                case StepResult::Ok:
-                    break;
-                default:
-                    printf("CORE %lu encountered error %d at PC:0x%08X\n", m_current_core, (uint32_t)result, (uint32_t)curr_pc);
+            if (!result.has_value()) {
+                printf("CORE %llu encountered error %d at PC:0x%08X\n", m_current_core, result.error(), curr_pc);
+
             }
 
             // Handle SBI calls

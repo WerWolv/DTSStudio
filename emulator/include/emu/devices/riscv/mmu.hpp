@@ -36,7 +36,7 @@ namespace ds::emu::dev::riscv {
             const auto entry_addr = page_table_address + index * sizeof(T);
             const auto &entry = core.read_physical<T>(entry_addr);
             if (!entry.has_value())
-                return entry;
+                return std::unexpected(AccessResult::LoadPageFault);
 
             constexpr static auto V = util::bit<0>();
             constexpr static auto R = util::bit<1>();
@@ -47,7 +47,7 @@ namespace ds::emu::dev::riscv {
 
             // V bit is not set, entry is invalid
             if (!(value & (V)))
-                return std::unexpected(AccessResult::Unmapped);
+                return std::unexpected(AccessResult::LoadPageFault);
 
 
             // Only Valid bit is set, entry is a pointer to the next translation layer
@@ -58,7 +58,7 @@ namespace ds::emu::dev::riscv {
 
             // Neither readable nor executable, entry is invalid
             if (!(value & (X | R)))
-                return std::unexpected(AccessResult::Unmapped);
+                return std::unexpected(AccessResult::LoadPageFault);
 
             // Entry is a leaf entry, construct the final physical address with it
             const auto ppn0 = util::extract_bits<10, 19>(value);

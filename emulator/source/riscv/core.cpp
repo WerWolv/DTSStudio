@@ -5,7 +5,7 @@
 
 namespace ds::emu::riscv {
 
-    auto Core::handle_system(const instr::base::type::I &instruction) -> StepResult {
+    auto Core::handle_system(const instr::base::type::I &instruction) -> std::expected<void, ExceptionCause> {
         const std::uint32_t old       = csr(instruction.imm);
         const std::uint32_t write_val = x(instruction.rs1);
 
@@ -16,161 +16,155 @@ namespace ds::emu::riscv {
                         case PrivilegeLevel::User:
                             scause() = 8;
                             stval() = 0;
-                            return StepResult::ECallUser;
+                            return std::unexpected(ExceptionCause::ECallUser);
                         case PrivilegeLevel::Supervisor:
                             scause() = 9;
                             stval() = 0;
-                            return StepResult::ECallSupervisor;
+                            return std::unexpected(ExceptionCause::ECallSupervisor);
                         default:
-                            return StepResult::InvalidInstruction;
+                            return std::unexpected(ExceptionCause::IllegalInstruction);
                     }
                 }
                 else if (instruction.imm == 0b000000000001) // EBREAK
-                    return StepResult::Break;
+                    return std::unexpected(ExceptionCause::Breakpoint);
                 else if (instruction.imm == 0b000100100000) { // SFENCE.VMA
                     m_address_space->invalidate();
-                    return StepResult::Ok;
+                    return {};
                 }
                 else
-                    return StepResult::InvalidInstruction;
+                    return std::unexpected(ExceptionCause::IllegalInstruction);
             case 0b001: // CSRRW
                 csr(instruction.imm) = write_val;
                 if (instruction.rd != 0)
                     x(instruction.rd) = old;
-                return StepResult::Ok;
+                return {};
             case 0b101: // CSRRWI
                 csr(instruction.imm) = instruction.rs1; // uimm[4:0]
                 if (instruction.rd != 0)
                     x(instruction.rd) = old;
-                return StepResult::Ok;
+                return {};
             case 0b010: // CSRRS
                 if (instruction.rs1 != 0)
                     csr(instruction.imm) = old | write_val;
                 if (instruction.rd != 0)
                     x(instruction.rd) = old;
-                return StepResult::Ok;
+                return {};
             case 0b110: // CSRRSI
                 if (instruction.rs1 != 0)
                     csr(instruction.imm) = old | instruction.rs1;
                 if (instruction.rd != 0)
                     x(instruction.rd) = old;
-                return StepResult::Ok;
+                return {};
             case 0b011: // CSRRC
                 if (instruction.rs1 != 0)
                     csr(instruction.imm) = old & ~write_val;
                 if (instruction.rd != 0)
                     x(instruction.rd) = old;
-                return StepResult::Ok;
+                return {};
             case 0b111: // CSRRCI
                 if (instruction.rs1 != 0)
                     csr(instruction.imm) = old & ~instruction.rs1;
                 if (instruction.rd != 0)
                     x(instruction.rd) = old;
-                return StepResult::Ok;
+                return {};
             default:
-                return StepResult::Unimplemented;
+                return std::unexpected(ExceptionCause::UnimplementedInstruction);
         }
-
-        return StepResult::Unimplemented;
     }
 
-    auto Core::handle_load(const instr::base::type::I &instruction) -> StepResult {
+    auto Core::handle_load(const instr::base::type::I &instruction) -> std::expected<void, ExceptionCause> {
         const auto offset = util::sign_extend<std::uint32_t, 12>(instruction.imm);
         const auto address = x(instruction.rs1) + offset;
         const bool sign_extend = util::extract_bits<2, 2>(instruction.funct3) == 0b0;
         const auto width = 1U << util::extract_bits<0, 1>(instruction.funct3);
 
-        std::expected<std::uint32_t, AccessResult> value;
+        std::expected<std::uint32_t, ExceptionCause> value;
         switch (width) {
             case 1: // LB
                 value = read<std::uint8_t>(address);
                 if (!value.has_value()) [[unlikely]]
-                    return StepResult::InvalidRead;
+                    return std::unexpected(value.error());
                 if (sign_extend)
                     value = util::sign_extend<std::uint32_t, 8>(*value);
                 break;
             case 2: // LH
                 value = read<std::uint16_t>(address);
                 if (!value.has_value()) [[unlikely]]
-                    return StepResult::InvalidRead;
+                    return std::unexpected(value.error());
                 if (sign_extend)
                     value = util::sign_extend<std::uint32_t, 16>(*value);
                 break;
             case 4: // LW
                 value = read<std::uint32_t>(address);
                 if (!value.has_value()) [[unlikely]]
-                    return StepResult::InvalidRead;
+                    return std::unexpected(value.error());
                 if (!sign_extend) [[unlikely]]
-                    return StepResult::InvalidInstruction;
+                    return std::unexpected(ExceptionCause::IllegalInstruction);
                 break;
             default:
-                return StepResult::InvalidInstruction;
+                return std::unexpected(ExceptionCause::IllegalInstruction);
         }
 
         x(instruction.rd) = *value;
-        return StepResult::Ok;
+        return {};
     }
 
-    auto Core::handle_store(const instr::base::type::S &instruction) -> StepResult {
+    auto Core::handle_store(const instr::base::type::S &instruction) -> std::expected<void, ExceptionCause> {
         const auto offset = util::sign_extend<std::uint32_t, 12>(instruction.imm);
         const auto address = x(instruction.rs1) + offset;
         const auto width = 1U << util::extract_bits<0, 1>(instruction.funct3);
 
         switch (width) {
             case 1:
-                if (write<std::uint8_t>(address, x(instruction.rs2)) == AccessResult::Unmapped) [[unlikely]]
-                    return StepResult::InvalidWrite;
+                if (auto result = write<std::uint8_t>(address, x(instruction.rs2)); !result.has_value())
+                    return std::unexpected(result.error());
                 break;
             case 2:
-                if (write<std::uint16_t>(address, x(instruction.rs2)) == AccessResult::Unmapped) [[unlikely]]
-                    return StepResult::InvalidWrite;
+                if (auto result = write<std::uint16_t>(address, x(instruction.rs2)); !result.has_value())
+                    return std::unexpected(result.error());
                 break;
             case 4:
-                if (write<std::uint32_t>(address, x(instruction.rs2)) == AccessResult::Unmapped) [[unlikely]]
-                    return StepResult::InvalidWrite;
-                break;
-            case 8:
-                if (write<std::uint64_t>(address, x(instruction.rs2)) == AccessResult::Unmapped) [[unlikely]]
-                    return StepResult::InvalidWrite;
+                if (auto result = write<std::uint32_t>(address, x(instruction.rs2)); !result.has_value())
+                    return std::unexpected(result.error());
                 break;
             default:
-                return StepResult::InvalidInstruction;
+                return std::unexpected(ExceptionCause::IllegalInstruction);
         }
 
-        return StepResult::Ok;
+        return {};
     }
 
-    auto Core::handle_lui(const instr::base::type::U &instruction) -> StepResult {
+    auto Core::handle_lui(const instr::base::type::U &instruction) -> std::expected<void, ExceptionCause> {
         x(instruction.rd) = instruction.imm;
-        return StepResult::Ok;
+        return {};
     }
 
-    auto Core::handle_auipc(const instr::base::type::U &instruction) -> StepResult {
+    auto Core::handle_auipc(const instr::base::type::U &instruction) -> std::expected<void, ExceptionCause> {
         x(instruction.rd) = instruction.imm + pc();
-        return StepResult::Ok;
+        return {};
     }
 
-    auto Core::handle_jal(const instr::base::type::J &instruction) -> StepResult {
+    auto Core::handle_jal(const instr::base::type::J &instruction) -> std::expected<void, ExceptionCause> {
         const auto offset = util::sign_extend<std::uint32_t, 21>(instruction.imm);
         const auto destination = pc() + offset;
 
         x(instruction.rd) = pc() + 4;
         pc() = destination - 4;
 
-        return StepResult::Ok;
+        return {};
     }
 
-    auto Core::handle_jalr(const instr::base::type::I &instruction) -> StepResult {
+    auto Core::handle_jalr(const instr::base::type::I &instruction) -> std::expected<void, ExceptionCause> {
         const auto offset = util::sign_extend<std::uint32_t, 12>(instruction.imm);
         const auto destination = (x(instruction.rs1) + offset) & ~0x0000'0001;
 
         x(instruction.rd) = pc() + 4;
         pc() = destination - 4;
 
-        return StepResult::Ok;
+        return {};
     }
 
-    auto Core::handle_op_imm(const instr::base::type::I &instruction) -> StepResult {
+    auto Core::handle_op_imm(const instr::base::type::I &instruction) -> std::expected<void, ExceptionCause> {
         const bool alternative = (instruction.imm >> 5) == 0b010'0000;
         const auto shamt = instruction.imm & 0b11111;
         switch (instruction.funct3) {
@@ -178,43 +172,43 @@ namespace ds::emu::riscv {
                 x(instruction.rd) =
                     x(instruction.rs1) +
                     util::sign_extend<std::uint32_t, 12>(instruction.imm);
-                return StepResult::Ok;
+                return {};
             }
             case 0b111: { // ANDI
                 x(instruction.rd) =
                     x(instruction.rs1) &
                     util::sign_extend<std::uint32_t, 12>(instruction.imm);
-                return StepResult::Ok;
+                return {};
             }
             case 0b110: { // ORI
                 x(instruction.rd) =
                     x(instruction.rs1) |
                     util::sign_extend<std::uint32_t, 12>(instruction.imm);
-                return StepResult::Ok;
+                return {};
             }
             case 0b100: { // XORI
                 x(instruction.rd) =
                     x(instruction.rs1) ^
                     util::sign_extend<std::uint32_t, 12>(instruction.imm);
-                return StepResult::Ok;
+                return {};
             }
             case 0b001: { // SLLI
                 x(instruction.rd) =
                     x(instruction.rs1) <<
                     shamt;
-                return StepResult::Ok;
+                return {};
             }
             case 0b010: { // SLTI
                 x(instruction.rd) =
                     static_cast<std::int32_t>(x(instruction.rs1)) <
                     util::sign_extend<std::uint32_t, 12>(instruction.imm);
-                return StepResult::Ok;
+                return {};
             }
             case 0b011: { // SLTIU
                 x(instruction.rd) =
                     x(instruction.rs1) <
                     instruction.imm;
-                return StepResult::Ok;
+                return {};
             }
             case 0b101: { // SRLI / SRAI
                 if (!alternative) {
@@ -226,13 +220,14 @@ namespace ds::emu::riscv {
                         static_cast<std::int32_t>(x(instruction.rs1)) >>
                         shamt;
                 }
-                return StepResult::Ok;
+                return {};
             }
+            default:
+                return std::unexpected(ExceptionCause::IllegalInstruction);
         }
-        return StepResult::InvalidInstruction;
     }
 
-    auto Core::handle_op(const instr::base::type::R &instruction) -> StepResult {
+    auto Core::handle_op(const instr::base::type::R &instruction) -> std::expected<void, ExceptionCause> {
         switch (instruction.funct7) {
             case 0b000'0000: {
                 switch (instruction.funct3) {
@@ -240,44 +235,44 @@ namespace ds::emu::riscv {
                         x(instruction.rd) =
                            x(instruction.rs1) +
                            x(instruction.rs2);
-                        return StepResult::Ok;
+                        return {};
                     case 0b001: // SLL
                         x(instruction.rd) =
                             x(instruction.rs1) <<
                             x(instruction.rs2);
-                        return StepResult::Ok;
+                        return {};
                     case 0b101: // SRL
                         x(instruction.rd) =
                             x(instruction.rs1) >>
                             x(instruction.rs2);
-                        return StepResult::Ok;
+                        return {};
                     case 0b010: // SLT
                         x(instruction.rd) =
                             static_cast<std::int32_t>(x(instruction.rs1)) <
                             static_cast<std::int32_t>(x(instruction.rs2));
-                        return StepResult::Ok;
+                        return {};
                     case 0b011: // SLTU
                         x(instruction.rd) =
                             x(instruction.rs1) <
                             x(instruction.rs2);
-                        return StepResult::Ok;
+                        return {};
                     case 0b110: // OR
                         x(instruction.rd) =
                            x(instruction.rs1) |
                            x(instruction.rs2);
-                        return StepResult::Ok;
+                        return {};
                     case 0b111: // AND
                         x(instruction.rd) =
                            x(instruction.rs1) &
                            x(instruction.rs2);
-                        return StepResult::Ok;
+                        return {};
                     case 0b100: // XOR
                         x(instruction.rd) =
                            x(instruction.rs1) ^
                            x(instruction.rs2);
-                        return StepResult::Ok;
+                        return {};
                     default:
-                        return StepResult::InvalidInstruction;
+                        return std::unexpected(ExceptionCause::IllegalInstruction);
                 }
             }
             case 0b000'0001: { // MULDIV
@@ -286,25 +281,25 @@ namespace ds::emu::riscv {
                         const std::int64_t left  = static_cast<std::int32_t>(x(instruction.rs1));
                         const std::int64_t right = static_cast<std::int32_t>(x(instruction.rs2));
                         x(instruction.rd) = static_cast<std::uint64_t>(left * right) & util::mask<32>();
-                        return StepResult::Ok;
+                        return {};
                     }
                     case 0b001: { // MULH
                         const std::int64_t left  = static_cast<std::int32_t>(x(instruction.rs1));
                         const std::int64_t right = static_cast<std::int32_t>(x(instruction.rs2));
                         x(instruction.rd) = static_cast<std::uint64_t>(left * right) >> 32;
-                        return StepResult::Ok;
+                        return {};
                     }
                     case 0b010: { // MULHSU
                         const std::int64_t  left  = static_cast<std::int32_t>(x(instruction.rs1));
                         const std::uint64_t right = static_cast<std::uint32_t>(x(instruction.rs2));
                         x(instruction.rd) = static_cast<std::uint64_t>(left * right) >> 32;
-                        return StepResult::Ok;
+                        return {};
                     }
                     case 0b011: { // MULHU
                         const std::uint64_t left  = static_cast<std::uint32_t>(x(instruction.rs1));
                         const std::uint64_t right = static_cast<std::uint32_t>(x(instruction.rs2));
                         x(instruction.rd) = static_cast<std::uint64_t>(left * right) >> 32;
-                        return StepResult::Ok;
+                        return {};
                     }
                     case 0b100: { // DIV
                         const std::uint32_t left  = x(instruction.rs1);
@@ -318,7 +313,7 @@ namespace ds::emu::riscv {
                             x(instruction.rd) = static_cast<std::int32_t>(left) / static_cast<std::int32_t>(right);
                         }
 
-                        return StepResult::Ok;
+                        return {};
                     }
                     case 0b101: { // DIVU
                         const std::uint32_t left  = x(instruction.rs1);
@@ -330,7 +325,7 @@ namespace ds::emu::riscv {
                             x(instruction.rd) = left / right;
                         }
 
-                        return StepResult::Ok;
+                        return {};
                     }
                     case 0b110: { // REM
                         const std::uint32_t left  = x(instruction.rs1);
@@ -344,7 +339,7 @@ namespace ds::emu::riscv {
                             x(instruction.rd) = static_cast<std::int32_t>(left) % static_cast<std::int32_t>(right);
                         }
 
-                        return StepResult::Ok;
+                        return {};
                     }
                     case 0b111: { // REMU
                         const std::uint32_t left  = x(instruction.rs1);
@@ -356,10 +351,10 @@ namespace ds::emu::riscv {
                             x(instruction.rd) = left % right;
                         }
 
-                        return StepResult::Ok;
+                        return {};
                     }
                     default:
-                        return StepResult::InvalidInstruction;
+                        return std::unexpected(ExceptionCause::IllegalInstruction);
                 }
             }
             case 0b010'0000: {
@@ -368,33 +363,33 @@ namespace ds::emu::riscv {
                         x(instruction.rd) =
                            x(instruction.rs1) -
                            x(instruction.rs2);
-                        return StepResult::Ok;
+                        return {};
                     case 0b101: // SRA
                         x(instruction.rd) =
                            static_cast<std::int32_t>(x(instruction.rs1)) >>
                            x(instruction.rs2);
-                        return StepResult::Ok;
+                        return {};
                     default:
-                        return StepResult::InvalidInstruction;
+                        return std::unexpected(ExceptionCause::IllegalInstruction);
                 }
             }
             default:
-                return StepResult::InvalidInstruction;
+                return std::unexpected(ExceptionCause::IllegalInstruction);
         }
     }
 
-    auto Core::handle_branch(const instr::base::type::B &instruction) -> StepResult {
+    auto Core::handle_branch(const instr::base::type::B &instruction) -> std::expected<void, ExceptionCause> {
         const auto branch_address = pc() + util::sign_extend<std::uint32_t, 13>(instruction.imm) - 4;
         const bool unsigned_compare = util::extract_bits<1, 1>(instruction.funct3) == 0b1;
         switch (instruction.funct3 & 0b101) {
             case 0b000: // BEQ
                 if (x(instruction.rs1) == x(instruction.rs2))
                     pc() = branch_address;
-                return StepResult::Ok;
+                return {};
             case 0b001: // BNE
                 if (x(instruction.rs1) != x(instruction.rs2))
                     pc() = branch_address;
-                return StepResult::Ok;
+                return {};
             case 0b100: // BLT / BLTU
                 if (unsigned_compare) {
                     if (x(instruction.rs1) < x(instruction.rs2))
@@ -404,7 +399,7 @@ namespace ds::emu::riscv {
                         pc() = branch_address;
                 }
 
-                return StepResult::Ok;
+                return {};
             case 0b101: // BGE / BGEU
                 if (unsigned_compare) {
                     if (x(instruction.rs1) >= x(instruction.rs2))
@@ -414,23 +409,24 @@ namespace ds::emu::riscv {
                         pc() = branch_address;
                 }
 
-                return StepResult::Ok;
-
+                return {};
+            default:
+                return std::unexpected(ExceptionCause::IllegalInstruction);
         }
-        return StepResult::InvalidInstruction;
     }
 
-    auto Core::handle_misc_mem(const instr::base::type::I &instruction) -> StepResult {
+    auto Core::handle_misc_mem(const instr::base::type::I &instruction) -> std::expected<void, ExceptionCause> {
         switch (instruction.funct3) {
             case 0b000: // FENCE
             case 0b001: // FENCE.I
                 // Nothing to do here
-                return StepResult::Ok;
+                return {};
+            default:
+                return std::unexpected(ExceptionCause::IllegalInstruction);
         }
-        return StepResult::InvalidInstruction;
     }
 
-    auto Core::handle_amo(const instr::base::type::R &instruction) -> StepResult {
+    auto Core::handle_amo(const instr::base::type::R &instruction) -> std::expected<void, ExceptionCause> {
         switch (instruction.funct3) {
             case 0b010: { // RV32A
                 const auto rl    = util::extract_bits<0, 0>(instruction.funct7);
@@ -445,160 +441,172 @@ namespace ds::emu::riscv {
                 switch (funct5) {
                     case 0b00010: { // LR.W
                         if (address % 4 != 0)
-                            return StepResult::MisalignedAccess;
+                            return std::unexpected(ExceptionCause::LoadMisalign);
 
                         const auto result = read<std::uint32_t>(address);
                         if (!result.has_value())
-                            return StepResult::InvalidRead;
+                            return std::unexpected(result.error());
 
                         const auto physical_address = m_address_space->translate_address(*this, address);
-                        if (!physical_address.has_value())
-                            return StepResult::InvalidRead;
+                        if (!physical_address.has_value()) {
+                            switch (physical_address.error()) {
+                                using enum AccessResult;
+                                default:
+                                case LoadAccessFault: return std::unexpected(ExceptionCause::LoadFault);
+                                case LoadPageFault: return std::unexpected(ExceptionCause::LoadPageFault);
+                            }
+                        }
 
                         this->m_lr_reservation = *physical_address | 0b1;
                         x(instruction.rd) = *result;
 
-                        return StepResult::Ok;
+                        return {};
                     }
                     case 0b00011: { // SC.W
                         if (address % 4 != 0)
-                            return StepResult::MisalignedAccess;
+                            return std::unexpected(ExceptionCause::StoreMisalign);
 
                         x(instruction.rd) = 1;
 
                         const auto physical_address = m_address_space->translate_address(*this, address);
-                        if (!physical_address.has_value())
-                            return StepResult::InvalidRead;
+                        if (!physical_address.has_value()) {
+                            switch (physical_address.error()) {
+                                using enum AccessResult;
+                                default:
+                                case LoadAccessFault: return std::unexpected(ExceptionCause::StoreFault);
+                                case LoadPageFault: return std::unexpected(ExceptionCause::StorePageFault);
+                            }
+                        }
 
                         if (m_lr_reservation != (*physical_address | 0b1))
-                            return StepResult::Ok;
+                            return {};
 
                         const auto result = write<std::uint32_t>(address, value);
-                        if (result != AccessResult::Ok)
-                            return StepResult::InvalidWrite;
+                        if (!result.has_value())
+                            return std::unexpected(result.error());
 
                         // TODO: Needs to be cleared on all harts that match the address
                         if ((m_lr_reservation & 0b1) and (m_lr_reservation & ~0b11) == (*physical_address & ~0b11))
-                            this->m_lr_reservation = 0;
+                            m_lr_reservation = 0;
                         x(instruction.rd) = 0;
 
-                        return StepResult::Ok;
+                        return {};
                     }
                     case 0b00001: { // AMOSWAP.W
-                        const auto result = read<std::uint32_t>(address);
-                        if (!result.has_value())
-                            return StepResult::InvalidRead;
+                        const auto read_result = read<std::uint32_t>(address);
+                        if (!read_result.has_value())
+                            return std::unexpected(read_result.error());
 
-                        if (write<std::uint32_t>(address, value) != AccessResult::Ok)
-                            return StepResult::InvalidWrite;
+                        if (const auto write_result = write<std::uint32_t>(address, value); !write_result.has_value())
+                            return std::unexpected(write_result.error());
 
-                        x(instruction.rd) = *result;
-                        return StepResult::Ok;
+                        x(instruction.rd) = *read_result;
+                        return {};
                     }
                     case 0b00000: { // AMOADD.W
-                        const auto result = read<std::uint32_t>(address);
-                        if (!result.has_value())
-                            return StepResult::InvalidRead;
+                        const auto read_result = read<std::uint32_t>(address);
+                        if (!read_result.has_value())
+                            return std::unexpected(read_result.error());
 
-                        x(instruction.rd) = *result;
-                        if (write<std::uint32_t>(address, *result +value) != AccessResult::Ok)
-                            return StepResult::InvalidWrite;
+                        x(instruction.rd) = *read_result;
+                        if (const auto write_result = write<std::uint32_t>(address, *read_result +value); !write_result.has_value())
+                            return std::unexpected(write_result.error());
 
-                        return StepResult::Ok;
+                        return {};
                     }
                     case 0b00100: { // AMOXOR.W
-                        const auto result = read<std::uint32_t>(address);
-                        if (!result.has_value())
-                            return StepResult::InvalidRead;
+                        const auto read_result = read<std::uint32_t>(address);
+                        if (!read_result.has_value())
+                            return std::unexpected(read_result.error());
 
-                        x(instruction.rd) = *result;
-                        if (write<std::uint32_t>(address, *result ^ value) != AccessResult::Ok)
-                            return StepResult::InvalidWrite;
+                        x(instruction.rd) = *read_result;
+                        if (const auto write_result = write<std::uint32_t>(address, *read_result ^ value); !write_result.has_value())
+                            return std::unexpected(write_result.error());
 
-                        return StepResult::Ok;
+                        return {};
                     }
                     case 0b01100: { // AMOAND.W
-                        const auto result = read<std::uint32_t>(address);
-                        if (!result.has_value())
-                            return StepResult::InvalidRead;
+                        const auto read_result = read<std::uint32_t>(address);
+                        if (!read_result.has_value())
+                            return std::unexpected(read_result.error());
 
-                        x(instruction.rd) = *result;
-                        if (write<std::uint32_t>(address, *result & value) != AccessResult::Ok)
-                            return StepResult::InvalidWrite;
+                        x(instruction.rd) = *read_result;
+                        if (const auto write_result = write<std::uint32_t>(address, *read_result & value); !write_result.has_value())
+                            return std::unexpected(write_result.error());
 
-                        return StepResult::Ok;
+                        return {};
                     }
                     case 0b01000: { // AMOOR.W
-                        const auto result = read<std::uint32_t>(address);
-                        if (!result.has_value())
-                            return StepResult::InvalidRead;
+                        const auto read_result = read<std::uint32_t>(address);
+                        if (!read_result.has_value())
+                            return std::unexpected(read_result.error());
 
-                        x(instruction.rd) = *result;
-                        if (write<std::uint32_t>(address, *result | value) != AccessResult::Ok)
-                            return StepResult::InvalidWrite;
+                        x(instruction.rd) = *read_result;
+                        if (const auto write_result = write<std::uint32_t>(address, *read_result | value); !write_result.has_value())
+                            return std::unexpected(write_result.error());
 
-                        return StepResult::Ok;
+                        return {};
                     }
                     case 0b10000: { // AMOMIN.W
-                        const auto result = read<std::uint32_t>(address);
-                        if (!result.has_value())
-                            return StepResult::InvalidRead;
+                        const auto read_result = read<std::uint32_t>(address);
+                        if (!read_result.has_value())
+                            return std::unexpected(read_result.error());
 
-                        x(instruction.rd) = *result;
-                        if (write<std::uint32_t>(address, std::min<std::int32_t>(*result, value)) != AccessResult::Ok)
-                            return StepResult::InvalidWrite;
+                        x(instruction.rd) = *read_result;
+                        if (const auto write_result = write<std::uint32_t>(address, std::min<std::int32_t>(*read_result, value)); !write_result.has_value())
+                            return std::unexpected(write_result.error());
 
-                        return StepResult::Ok;
+                        return {};
                     }
                     case 0b10100: { // AMOMAX.W
-                        const auto result = read<std::uint32_t>(address);
-                        if (!result.has_value())
-                            return StepResult::InvalidRead;
+                        const auto read_result = read<std::uint32_t>(address);
+                        if (!read_result.has_value())
+                            return std::unexpected(read_result.error());
 
-                        x(instruction.rd) = *result;
-                        if (write<std::uint32_t>(address, std::max<std::int32_t>(*result, value)) != AccessResult::Ok)
-                            return StepResult::InvalidWrite;
+                        x(instruction.rd) = *read_result;
+                        if (const auto write_result = write<std::uint32_t>(address, std::max<std::int32_t>(*read_result, value)); !write_result.has_value())
+                            return std::unexpected(write_result.error());
 
-                        return StepResult::Ok;
+                        return {};
                     }
                     case 0b11000: { // AMOMINU.W
-                        const auto result = read<std::uint32_t>(address);
-                        if (!result.has_value())
-                            return StepResult::InvalidRead;
+                        const auto read_result = read<std::uint32_t>(address);
+                        if (!read_result.has_value())
+                            return std::unexpected(read_result.error());
 
-                        x(instruction.rd) = *result;
-                        if (write<std::uint32_t>(address, std::min<std::uint32_t>(*result, value)) != AccessResult::Ok)
-                            return StepResult::InvalidWrite;
+                        x(instruction.rd) = *read_result;
+                        if (const auto write_result = write<std::uint32_t>(address, std::min<std::uint32_t>(*read_result, value)); !write_result.has_value())
+                            return std::unexpected(write_result.error());
 
-                        return StepResult::Ok;
+                        return {};
                     }
                     case 0b11100: { // AMOMAXU.W
-                        const auto result = read<std::uint32_t>(address);
-                        if (!result.has_value())
-                            return StepResult::InvalidRead;
+                        const auto read_result = read<std::uint32_t>(address);
+                        if (!read_result.has_value())
+                            return std::unexpected(read_result.error());
 
-                        x(instruction.rd) = *result;
-                        if (write<std::uint32_t>(address, std::max<std::uint32_t>(*result, value)) != AccessResult::Ok)
-                            return StepResult::InvalidWrite;
+                        x(instruction.rd) = *read_result;
+                        if (const auto write_result = write<std::uint32_t>(address, std::max<std::uint32_t>(*read_result, value)); !write_result.has_value())
+                            return std::unexpected(write_result.error());
 
-                        return StepResult::Ok;
+                        return {};
                     }
                     default:
-                        return StepResult::Unimplemented;
+                        return std::unexpected(ExceptionCause::IllegalInstruction);
                 }
             }
             default:
-                return StepResult::InvalidInstruction;
+                return std::unexpected(ExceptionCause::IllegalInstruction);
         }
     }
 
-    auto Core::handle_unimplemented(std::uint32_t instruction) -> StepResult {
+    auto Core::handle_unimplemented(std::uint32_t instruction) -> std::expected<void, ExceptionCause> {
         std::ignore = instruction;
         std::printf("Unimplemented instruction 0x%08x at 0x%08X\n", instruction, (uint32_t)pc());
-        return StepResult::Unimplemented;
+        return std::unexpected(ExceptionCause::UnimplementedInstruction);
     }
 
-    auto Core::handle_std_instructions(std::uint32_t instruction) -> StepResult {
+    auto Core::handle_std_instructions(std::uint32_t instruction) -> std::expected<void, ExceptionCause> {
         constexpr static auto Instructions = jumpTable<2, 6,
             Entry<instr::base::LOAD,        &Core::handle_load>,
             Entry<instr::base::STORE,       &Core::handle_store>,
@@ -677,36 +685,38 @@ namespace ds::emu::riscv {
         }
     }
 
-    auto Core::step() -> StepResult {
+    auto Core::step() -> std::expected<void, ExceptionCause> {
         constexpr static auto Instructions = jumpTable<0, 1,
             Entry<instr::base::Quadrant, &Core::handle_std_instructions>
         >();
 
         handle_interrupts();
 
-        StepResult result;
-        const auto instruction = read<std::uint32_t>(pc());
+        std::expected<void, ExceptionCause> result;
+        const auto instruction = fetch<std::uint32_t>(pc());
         if (instruction.has_value()) [[likely]] {
             result = Instructions(this, *instruction);
-            if (result == StepResult::InvalidInstruction)
-                scause() = 2;
         } else {
-            result = StepResult::InvalidFetch;
+            result = std::unexpected(instruction.error());
         }
 
-        switch (result) {
-            case StepResult::Ok:
-                break;
-            case StepResult::ECallSupervisor: // ECALL from Supervisor mode, delegate it to machine mode
-                set_privilege_level(PrivilegeLevel::Machine);
-                return StepResult::Ok;
-            case StepResult::ECallUser: // ECALL from User mode, jump to supervisor
-                set_privilege_level(PrivilegeLevel::Supervisor);
-                // TODO: trap
-                return StepResult::Ok;
-            default:
-                this->trap();
-                break;
+        if (!result.has_value()) {
+            const auto exception = result.error();
+            scause() = static_cast<std::uint32_t>(exception);
+            switch (exception) {
+                using enum ExceptionCause;
+                case ECallSupervisor: // ECALL from Supervisor mode, delegate it to machine mode
+                    set_privilege_level(PrivilegeLevel::Machine);
+                    return {};
+                case ECallUser: // ECALL from User mode, jump to supervisor
+                    set_privilege_level(PrivilegeLevel::Supervisor);
+                    // TODO: trap
+                    return {};
+                default:
+                    stval() = pc() - 4;
+                    this->trap();
+                    break;
+            }
         }
 
 

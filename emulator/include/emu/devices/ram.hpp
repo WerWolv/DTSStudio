@@ -12,12 +12,12 @@ namespace ds::emu::dev {
 
         auto read(Offset offset, std::span<std::uint8_t> buffer) -> AccessResult final {
             std::memcpy(buffer.data(), m_data.data() + offset, buffer.size_bytes());
-            return AccessResult::Ok;
+            return AccessResult::Success;
         }
 
         auto write(Offset offset, std::span<const std::uint8_t> buffer) -> AccessResult final {
             std::memcpy(m_data.data() + offset, buffer.data(), buffer.size_bytes());
-            return AccessResult::Ok;
+            return AccessResult::Success;
         }
 
         auto reset() -> void final {

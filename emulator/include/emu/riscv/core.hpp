@@ -15,18 +15,24 @@
 
 namespace ds::emu::riscv {
 
-    enum class StepResult {
-        Ok,
-        Unimplemented,
-        InvalidInstruction,
-        InvalidFetch,
-        InvalidRead,
-        InvalidWrite,
-        MisalignedAccess,
-        ECallUser,
-        ECallSupervisor,
-        Stopped,
-        Break
+    enum class ExceptionCause {
+        PCMisalign          = 0,
+        FetchFault          = 1,
+        IllegalInstruction  = 2,
+        Breakpoint          = 3,
+        LoadMisalign        = 4,
+        LoadFault           = 5,
+        StoreMisalign       = 6,
+        StoreFault          = 7,
+        ECallUser           = 8,
+        ECallSupervisor     = 9,
+        FetchPageFault      = 12,
+        LoadPageFault       = 13,
+        StorePageFault      = 15,
+
+        // Custom Exception codes
+        UnimplementedInstruction    = 16,
+        CoreStopped                 = 17
     };
 
     enum class PrivilegeLevel {
@@ -52,7 +58,7 @@ namespace ds::emu::riscv {
         Core &operator=(const Core &other) = delete;
         Core &operator=(Core &&other) = default;
 
-        StepResult step();
+        std::expected<void, ExceptionCause> step();
 
         [[nodiscard]] constexpr auto get_privilege_level() const -> PrivilegeLevel {
             return m_privilege_level;
@@ -137,79 +143,133 @@ namespace ds::emu::riscv {
         }
 
         template<typename T>
-        auto read(std::uint64_t address) -> std::expected<T, AccessResult> {
+        auto read(std::uint64_t address) -> std::expected<T, ExceptionCause> {
             if (address % alignof(T) != 0) [[unlikely]] {
-                scause() = 2;
-                return std::unexpected(AccessResult::UnalignedAccess);
+                return std::unexpected(ExceptionCause::LoadMisalign);
             }
 
             T data;
             const auto result = m_address_space->read(*this, address, util::to_byte_span(data));
-            if (result != AccessResult::Ok) {
-                return std::unexpected(result);
-            } else {
-                return data;
+            switch (result) {
+                using enum AccessResult;
+                case Success: return data;
+
+                default:
+                case LoadAccessFault: return std::unexpected(ExceptionCause::LoadFault);
+                case LoadPageFault: return std::unexpected(ExceptionCause::LoadPageFault);
             }
         }
 
         template<typename T>
-        auto read_physical(std::uint64_t address) -> std::expected<T, AccessResult> {
+        auto read_physical(std::uint64_t address) -> std::expected<T, ExceptionCause> {
             if (address % alignof(T) != 0) [[unlikely]] {
-                scause() = 2;
-                return std::unexpected(AccessResult::UnalignedAccess);
+                return std::unexpected(ExceptionCause::LoadMisalign);
             }
 
             T data;
             const auto result = m_address_space->read_physical(address, util::to_byte_span(data));
-            if (result != AccessResult::Ok) {
-                return std::unexpected(result);
-            } else {
-                return data;
+            switch (result) {
+                using enum AccessResult;
+                case Success: return data;
+
+                default:
+                case LoadAccessFault: return std::unexpected(ExceptionCause::LoadFault);
+                case LoadPageFault: return std::unexpected(ExceptionCause::LoadPageFault);
             }
         }
 
         template<typename T>
-        auto write(std::uint64_t address, T value) -> AccessResult {
+        auto fetch(std::uint64_t address) -> std::expected<T, ExceptionCause> {
             if (address % alignof(T) != 0) [[unlikely]] {
-                scause() = 2;
-                return AccessResult::UnalignedAccess;
+                return std::unexpected(ExceptionCause::PCMisalign);
             }
 
-            return m_address_space->write(*this, address, util::to_byte_span(value));
+            T data;
+            const auto result = m_address_space->read(*this, address, util::to_byte_span(data));
+            switch (result) {
+                using enum AccessResult;
+                case Success: return data;
+
+                default:
+                case LoadAccessFault: return std::unexpected(ExceptionCause::FetchFault);
+                case LoadPageFault: return std::unexpected(ExceptionCause::FetchPageFault);
+            }
         }
 
         template<typename T>
-        auto write_physical(std::uint64_t address, T value) -> AccessResult {
+        auto fetch_physical(std::uint64_t address) -> std::expected<T, ExceptionCause> {
             if (address % alignof(T) != 0) [[unlikely]] {
-                scause() = 2;
-                return AccessResult::UnalignedAccess;
+                return std::unexpected(ExceptionCause::PCMisalign);
             }
 
-            return m_address_space->write_physical(address, util::to_byte_span(value));
+            T data;
+            const auto result = m_address_space->read_physical(address, util::to_byte_span(data));
+            switch (result) {
+                using enum AccessResult;
+                case Success: return data;
+
+                default:
+                case LoadAccessFault: return std::unexpected(ExceptionCause::FetchFault);
+                case LoadPageFault: return std::unexpected(ExceptionCause::FetchPageFault);
+            }
+        }
+
+        template<typename T>
+        auto write(std::uint64_t address, T value) -> std::expected<void, ExceptionCause> {
+            if (address % alignof(T) != 0) [[unlikely]] {
+                return std::unexpected(ExceptionCause::StoreMisalign);
+            }
+
+            const auto result = m_address_space->write(*this, address, util::to_byte_span(value));
+            switch (result) {
+                using enum AccessResult;
+                case Success: return {};
+
+                default:
+                case StoreAccessFault: return std::unexpected(ExceptionCause::StoreFault);
+                case StorePageFault: return std::unexpected(ExceptionCause::StorePageFault);
+            }
+        }
+
+        template<typename T>
+        auto write_physical(std::uint64_t address, T value) -> std::expected<void, ExceptionCause> {
+            if (address % alignof(T) != 0) [[unlikely]] {
+                return std::unexpected(ExceptionCause::StoreMisalign);
+            }
+
+            const auto result = m_address_space->write_physical(address, util::to_byte_span(value));
+            switch (result) {
+                using enum AccessResult;
+                case Success: {};
+
+                default:
+                case StoreAccessFault: return std::unexpected(ExceptionCause::StoreFault);
+                case StorePageFault: return std::unexpected(ExceptionCause::StorePageFault);
+            }
         }
 
     private:
-        auto handle_std_instructions(std::uint32_t instruction) -> StepResult;
+        auto handle_std_instructions(std::uint32_t instruction) -> std::expected<void, ExceptionCause>;
 
-        auto handle_unimplemented(std::uint32_t instruction) -> StepResult;
-        auto handle_system(const instr::base::type::I &instruction) -> StepResult;
-        auto handle_jal(const instr::base::type::J &instruction) -> StepResult;
-        auto handle_jalr(const instr::base::type::I &instruction) -> StepResult;
-        auto handle_load(const instr::base::type::I &instruction) -> StepResult;
-        auto handle_store(const instr::base::type::S &instruction) -> StepResult;
-        auto handle_lui(const instr::base::type::U &instruction) -> StepResult;
-        auto handle_auipc(const instr::base::type::U &instruction) -> StepResult;
-        auto handle_op_imm(const instr::base::type::I &instruction) -> StepResult;
-        auto handle_op(const instr::base::type::R &instruction) -> StepResult;
-        auto handle_branch(const instr::base::type::B &instruction) -> StepResult;
-        auto handle_misc_mem(const instr::base::type::I &instruction) -> StepResult;
-        auto handle_amo(const instr::base::type::R &instruction) -> StepResult;
+        auto handle_unimplemented(std::uint32_t instruction) -> std::expected<void, ExceptionCause>;
+        auto handle_system(const instr::base::type::I &instruction) -> std::expected<void, ExceptionCause>;
+        auto handle_jal(const instr::base::type::J &instruction) -> std::expected<void, ExceptionCause>;
+        auto handle_jalr(const instr::base::type::I &instruction) -> std::expected<void, ExceptionCause>;
+        auto handle_load(const instr::base::type::I &instruction) -> std::expected<void, ExceptionCause>;
+        auto handle_store(const instr::base::type::S &instruction) -> std::expected<void, ExceptionCause>;
+        auto handle_lui(const instr::base::type::U &instruction) -> std::expected<void, ExceptionCause>;
+        auto handle_auipc(const instr::base::type::U &instruction) -> std::expected<void, ExceptionCause>;
+        auto handle_op_imm(const instr::base::type::I &instruction) -> std::expected<void, ExceptionCause>;
+        auto handle_op(const instr::base::type::R &instruction) -> std::expected<void, ExceptionCause>;
+        auto handle_branch(const instr::base::type::B &instruction) -> std::expected<void, ExceptionCause>;
+        auto handle_misc_mem(const instr::base::type::I &instruction) -> std::expected<void, ExceptionCause>;
+        auto handle_amo(const instr::base::type::R &instruction) -> std::expected<void, ExceptionCause>;
 
         auto handle_interrupts() -> void;
         auto trap() -> void;
 
     private:
-        using HandlerFunction = StepResult(Core::*)(std::uint32_t instruction);
+        using HandlerFunction = std::expected<void, ExceptionCause>(Core::*)(std::uint32_t instruction);
 
         template<typename Instr, auto HandlerFunction>
         struct Entry {
@@ -218,7 +278,7 @@ namespace ds::emu::riscv {
         };
 
         template<typename Entry>
-        auto decode_instruction(std::uint32_t instruction) -> StepResult {
+        auto decode_instruction(std::uint32_t instruction) -> std::expected<void, ExceptionCause> {
             if constexpr (requires { (this->*Entry::Handler)(typename Entry::Instruction::Type(instruction)); }) {
                 return (this->*Entry::Handler)(typename Entry::Instruction::Type(instruction));
             } else {

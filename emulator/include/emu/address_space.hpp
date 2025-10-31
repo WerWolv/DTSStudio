@@ -13,9 +13,13 @@
 namespace ds::emu {
 
     enum class AccessResult {
-        Ok,
-        Unmapped,
-        UnalignedAccess
+        Success,
+        LoadMisalign,
+        StoreMisalign,
+        LoadAccessFault,
+        StoreAccessFault,
+        LoadPageFault,
+        StorePageFault,
     };
 
     template<typename T>
@@ -53,7 +57,7 @@ namespace ds::emu {
         constexpr auto read(Core &core, T virtual_address, std::span<std::uint8_t> buffer) -> AccessResult {
             const auto physical_address = translate_address(core, virtual_address);
             if (!physical_address.has_value()) [[unlikely]] {
-                return AccessResult::Unmapped;
+                return AccessResult::LoadPageFault;
             }
             return read_physical(*physical_address, buffer);
         }
@@ -62,13 +66,13 @@ namespace ds::emu {
             if (auto entry = get(address); entry != nullptr)
                 return entry->peripheral->read(address - entry->base_address, buffer);
 
-            return AccessResult::Unmapped;
+            return AccessResult::LoadAccessFault;
         }
 
         constexpr auto write(Core &core, T virtual_address, std::span<const std::uint8_t> buffer) -> AccessResult {
             const auto physical_address = translate_address(core, virtual_address);
             if (!physical_address.has_value()) [[unlikely]] {
-                return AccessResult::Unmapped;
+                return AccessResult::StorePageFault;
             }
             return write_physical(*physical_address, buffer);
         }
@@ -77,7 +81,7 @@ namespace ds::emu {
             if (auto entry = get(address); entry != nullptr)
                 return entry->peripheral->write(address - entry->base_address, buffer);
 
-            return AccessResult::Unmapped;
+            return AccessResult::StoreAccessFault;
         }
 
         struct PeripheralEntry {

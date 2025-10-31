@@ -11,22 +11,22 @@ namespace ds::emu::dev {
         auto read(Offset offset, std::span<std::uint8_t> buffer) -> AccessResult final {
             const auto reg = get_register(offset);
             if (reg == nullptr)
-                return AccessResult::Unmapped;
+                return AccessResult::LoadPageFault;
 
             std::memset(buffer.data(), 0, buffer.size());
             buffer[0] = *reg;
 
-            return AccessResult::Ok;
+            return AccessResult::Success;
         }
 
         auto write(Offset offset, std::span<const std::uint8_t> buffer) -> AccessResult final {
             const auto reg = get_register(offset);
             if (reg == nullptr)
-                return AccessResult::Unmapped;
+                return AccessResult::StorePageFault;
 
             *reg = buffer[0];
 
-            return AccessResult::Ok;
+            return AccessResult::Success;
         }
 
         auto reset() -> void final {
