@@ -41,7 +41,7 @@ namespace ds::emu::riscv {
     class Core : public emu::Core {
     public:
         Core() = default;
-        Core(std::uint8_t hart, AddressSpace<std::uint32_t> *address_space)
+        Core(std::uint16_t hart, AddressSpace<std::uint32_t> *address_space)
             : m_hart(hart), m_address_space(address_space) {
             reset();
         }
@@ -74,6 +74,10 @@ namespace ds::emu::riscv {
 
         constexpr auto csr(std::uint16_t number) -> Register& {
             return m_csrs[number];
+        }
+
+        auto hart_id() -> std::uint16_t {
+            return m_hart;
         }
 
         auto pc()   -> auto& { return m_program_counter; }
@@ -248,7 +252,7 @@ namespace ds::emu::riscv {
         }
 
     private:
-        std::uint8_t m_hart = 0;
+        std::uint16_t m_hart = 0;
         AddressSpace<std::uint32_t> *m_address_space = nullptr;
 
         ZeroRegister<std::uint32_t> m_zeroRegister;

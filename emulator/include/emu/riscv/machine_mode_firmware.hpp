@@ -81,12 +81,28 @@ namespace ds::emu::riscv::m_mode {
             );
         }
 
+        auto reset() -> void {
+            // Call the reset function of each extension if it's available
+            std::apply(
+                [&](auto& ...extensions) {
+                    (..., reset_extension(extensions));
+                },
+                m_extensions
+            );
+        }
+
     private:
         constexpr static auto update_extension(Core& core, auto &extension) -> void {
             if constexpr (requires { extension.update(core); })
                 extension.update(core);
             else if constexpr (requires { extension.update(); })
                 extension.update();
+        }
+
+        constexpr static auto reset_extension(auto &extension) -> void {
+            if constexpr (requires { extension.reset(); }) {
+                extension.reset();
+            }
         }
 
         template<typename FunctionSignature>

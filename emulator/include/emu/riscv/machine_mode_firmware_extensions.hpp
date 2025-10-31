@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <emu/riscv/machine_mode_firmware.hpp>
 
 namespace ds::emu::riscv::m_mode {
@@ -86,20 +87,47 @@ namespace ds::emu::riscv::m_mode {
 
     struct ExtensionTimer : Extension<"TIME"> {
         auto set_timer(Core &core, std::uint32_t low, std::uint32_t high) -> SBICallResult {
-            const auto value = (static_cast<std::uint64_t>(high) << 32) | low;
-            std::ignore = core;
-            std::ignore = value;
+            m_timer_compare_value[core.hart_id()] = (static_cast<std::uint64_t>(high) << 32) | low;
 
-            return { SBICallErrorCode::NotSupported, 0 };
+            core.sip() &= ~util::bit<5>();
+
+            return { SBICallErrorCode::Success, 0 };
         }
 
         auto update(Core &core) -> void {
+            m_timer_value = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::high_resolution_clock::now() - m_start_time
+            ).count();
 
+            if (m_timer_value >= get_timer_compare_value(core))
+                core.sip() |= util::bit<5>();
+            else
+                core.sip() &= ~util::bit<5>();
+        }
+
+        auto reset() -> void {
+            m_start_time = std::chrono::high_resolution_clock::now();
+            m_timer_compare_value.clear();
         }
 
         using Functions = std::tuple<
             Function<0, &ExtensionTimer::set_timer>
         >;
+
+    private:
+        constexpr auto get_timer_compare_value(Core &core) -> std::uint64_t& {
+            const auto hart = core.hart_id();
+            if (m_timer_compare_value.size() <= hart) [[unlikely]]
+                m_timer_compare_value.resize(hart + 1);
+
+            return m_timer_compare_value[hart];
+        }
+
+    private:
+        std::chrono::high_resolution_clock::time_point m_start_time;
+
+        std::uint64_t m_timer_value = 0x00;
+        std::vector<std::uint64_t> m_timer_compare_value;
     };
 
     struct ExtensionRst : Extension<"SRST"> {

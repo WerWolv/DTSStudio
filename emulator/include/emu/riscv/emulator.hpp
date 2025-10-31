@@ -67,7 +67,10 @@ namespace ds::emu::riscv {
             for (auto &core : m_cores) {
                 core.reset();
             }
+
             m_address_space.reset();
+            m_machine_mode_firmware.reset();
+
             m_in_reset = true;
         }
 
