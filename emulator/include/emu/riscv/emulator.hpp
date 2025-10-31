@@ -23,6 +23,7 @@ namespace ds::emu::riscv {
                 return StepResult::Stopped;
 
             auto &core = m_cores[m_current_core];
+            const auto curr_pc = core.pc();
 
             // Step the core one instruction forward
             const auto result = core.step();
@@ -30,7 +31,7 @@ namespace ds::emu::riscv {
                 case StepResult::Ok:
                     break;
                 default:
-                    printf("CORE %lu encountered error %d at PC:0x%08X\n", m_current_core, (uint32_t)result, (uint32_t)core.pc());
+                    printf("CORE %lu encountered error %d at PC:0x%08X\n", m_current_core, (uint32_t)result, (uint32_t)curr_pc);
             }
 
             // Handle SBI calls

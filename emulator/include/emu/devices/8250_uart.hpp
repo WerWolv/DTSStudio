@@ -65,7 +65,9 @@ namespace ds::emu::dev {
         struct InputOutputRegister : public RegisterBase<std::uint8_t> {
             InputOutputRegister(Registers *registers){}
             constexpr auto operator=(Type value) -> InputOutputRegister& final {
-                std::putchar(value);
+                if (value != '\r') [[likely]]
+                    std::putchar(value);
+
                 return *this;
             }
 

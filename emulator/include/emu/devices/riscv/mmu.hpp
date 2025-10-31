@@ -46,7 +46,7 @@ namespace ds::emu::dev::riscv {
             const auto value = entry.value();
 
             // V bit is not set, entry is invalid
-            if (not (value & (V)))
+            if (!(value & (V)))
                 return std::unexpected(AccessResult::Unmapped);
 
 
@@ -57,7 +57,7 @@ namespace ds::emu::dev::riscv {
             }
 
             // Neither readable nor executable, entry is invalid
-            if (not (value & (X | R)))
+            if (!(value & (X | R)))
                 return std::unexpected(AccessResult::Unmapped);
 
             // Entry is a leaf entry, construct the final physical address with it
