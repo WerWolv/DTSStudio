@@ -31,28 +31,28 @@ namespace ds::emu::riscv {
                 else
                     return StepResult::InvalidInstruction;
             case 0b001: // CSRRW
-                x(instruction.rd) = csr(instruction.imm);
+                if (instruction.rd != 0) x(instruction.rd) = csr(instruction.imm);
                 csr(instruction.imm) = x(instruction.rs1);
                 return StepResult::Ok;
             case 0b101: // CSRRWI
-                x(instruction.rd) = csr(instruction.imm);
+                if (instruction.rd != 0) x(instruction.rd) = csr(instruction.imm);
                 csr(instruction.imm) = instruction.rs1;
                 return StepResult::Ok;
             case 0b010: // CSRRS
-                x(instruction.rd) = csr(instruction.imm);
-                csr(instruction.imm) |= x(instruction.rs1);
+                if (instruction.rd  != 0) x(instruction.rd) = csr(instruction.imm);
+                if (instruction.rs1 != 0) csr(instruction.imm) |= x(instruction.rs1);
                 return StepResult::Ok;
             case 0b110: // CSRRSI
-                x(instruction.rd) = csr(instruction.imm);
-                csr(instruction.imm) |= instruction.rs1;
+                if (instruction.rd  != 0) x(instruction.rd) = csr(instruction.imm);
+                if (instruction.rs1 != 0) csr(instruction.imm) |= instruction.rs1;
                 return StepResult::Ok;
             case 0b011: // CSRRC
-                x(instruction.rd) = csr(instruction.imm);
-                csr(instruction.imm) &= ~x(instruction.rs1);
+                if (instruction.rd  != 0) x(instruction.rd) = csr(instruction.imm);
+                if (instruction.rs1 != 0) csr(instruction.imm) &= ~x(instruction.rs1);
                 return StepResult::Ok;
             case 0b111: // CSRRCI
-                x(instruction.rd) = csr(instruction.imm);
-                csr(instruction.imm) &= ~instruction.rs1;
+                if (instruction.rd  != 0) x(instruction.rd) = csr(instruction.imm);
+                if (instruction.rs1 != 0) csr(instruction.imm) &= ~instruction.rs1;
                 return StepResult::Ok;
             default:
                 return StepResult::Unimplemented;
