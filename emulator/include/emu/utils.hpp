@@ -15,9 +15,9 @@ namespace ds::emu::util {
     template<> struct SizedType<8> { using Signed = std::int64_t; using Unsigned = std::uint64_t; };
 
 
-    template<std::uint8_t BitNumber, typename T = std::uint32_t>
+    template<auto BitNumber, typename T = std::uint32_t>
     constexpr auto bit() -> T {
-        return (T(1) << BitNumber);
+        return (T(1) << T(BitNumber));
     }
 
     template<std::uint8_t Size, typename T = std::uint32_t>

@@ -11,28 +11,41 @@ namespace ds::emu::riscv {
 
         switch (instruction.funct3) {
             case 0b000: // PRIV
-                if (instruction.imm == 0b000000000000) { // ECALL
-                    switch (m_privilege_level) {
-                        case PrivilegeLevel::User:
-                            scause() = 8;
-                            stval() = 0;
-                            return std::unexpected(ExceptionCause::ECallUser);
-                        case PrivilegeLevel::Supervisor:
-                            scause() = 9;
-                            stval() = 0;
-                            return std::unexpected(ExceptionCause::ECallSupervisor);
-                        default:
-                            return std::unexpected(ExceptionCause::IllegalInstruction);
+                switch (instruction.imm) {
+                    case 0b000000000000: { // ECALL
+                        switch (m_privilege_level) {
+                            case PrivilegeLevel::User:
+                                stval() = 0;
+                                return std::unexpected(ExceptionCause::ECallUser);
+                            case PrivilegeLevel::Supervisor:
+                                stval() = 0;
+                                return std::unexpected(ExceptionCause::ECallSupervisor);
+                            default:
+                                return std::unexpected(ExceptionCause::IllegalInstruction);
+                        }
                     }
+                    case 0b000000000001: // EBREAK
+                        return std::unexpected(ExceptionCause::Breakpoint);
+                    case 0b000100100000 ... 0b000100111111: // SFENCE.VMA
+                        m_address_space->invalidate();
+                        return {};
+                    case 0b000100000010: { // SRET
+                        pc() = sepc();
+                        m_address_space->invalidate();
+
+                        const auto spp  = sstatus().get_bit(8);
+                        const auto spie = sstatus().get_bit(5);
+
+                        m_privilege_level = spp ? PrivilegeLevel::Supervisor : PrivilegeLevel::User;
+
+                        sstatus().set_bit(1, spie);         // SIE = SPIE
+                        sstatus().set_bit(8, false);   // SPP = 0
+                        sstatus().set_bit(5, true);    // SPIE = 1
+                        return {};
+                    }
+                    default:
+                        return std::unexpected(ExceptionCause::IllegalInstruction);
                 }
-                else if (instruction.imm == 0b000000000001) // EBREAK
-                    return std::unexpected(ExceptionCause::Breakpoint);
-                else if (instruction.imm == 0b000100100000) { // SFENCE.VMA
-                    m_address_space->invalidate();
-                    return {};
-                }
-                else
-                    return std::unexpected(ExceptionCause::IllegalInstruction);
             case 0b001: // CSRRW
                 csr(instruction.imm) = write_val;
                 if (instruction.rd != 0)
@@ -111,20 +124,20 @@ namespace ds::emu::riscv {
 
     auto Core::handle_store(const instr::base::type::S &instruction) -> std::expected<void, ExceptionCause> {
         const auto offset = util::sign_extend<std::uint32_t, 12>(instruction.imm);
-        const auto address = x(instruction.rs1) + offset;
+        const std::uint32_t base = x(instruction.rs1);
         const auto width = 1U << util::extract_bits<0, 1>(instruction.funct3);
 
         switch (width) {
-            case 1:
-                if (auto result = write<std::uint8_t>(address, x(instruction.rs2)); !result.has_value())
+            case 1: // SB
+                if (auto result = write<std::uint8_t>(base + offset, x(instruction.rs2)); !result.has_value())
                     return std::unexpected(result.error());
                 break;
-            case 2:
-                if (auto result = write<std::uint16_t>(address, x(instruction.rs2)); !result.has_value())
+            case 2: // SH
+                if (auto result = write<std::uint16_t>(base + offset, x(instruction.rs2)); !result.has_value())
                     return std::unexpected(result.error());
                 break;
-            case 4:
-                if (auto result = write<std::uint32_t>(address, x(instruction.rs2)); !result.has_value())
+            case 4: // SW
+                if (auto result = write<std::uint32_t>(base + offset, x(instruction.rs2)); !result.has_value())
                     return std::unexpected(result.error());
                 break;
             default:
@@ -447,7 +460,7 @@ namespace ds::emu::riscv {
                         if (!result.has_value())
                             return std::unexpected(result.error());
 
-                        const auto physical_address = m_address_space->translate_address(*this, address);
+                        const auto physical_address = m_address_space->translate_address(*this, address, AccessType::Load);
                         if (!physical_address.has_value()) {
                             switch (physical_address.error()) {
                                 using enum AccessResult;
@@ -468,7 +481,7 @@ namespace ds::emu::riscv {
 
                         x(instruction.rd) = 1;
 
-                        const auto physical_address = m_address_space->translate_address(*this, address);
+                        const auto physical_address = m_address_space->translate_address(*this, address, AccessType::Store);
                         if (!physical_address.has_value()) {
                             switch (physical_address.error()) {
                                 using enum AccessResult;
@@ -602,7 +615,6 @@ namespace ds::emu::riscv {
 
     auto Core::handle_unimplemented(std::uint32_t instruction) -> std::expected<void, ExceptionCause> {
         std::ignore = instruction;
-        std::printf("Unimplemented instruction 0x%08x at 0x%08X\n", instruction, (uint32_t)pc());
         return std::unexpected(ExceptionCause::UnimplementedInstruction);
     }
 
@@ -638,19 +650,48 @@ namespace ds::emu::riscv {
         return result;
     }
 
+    constexpr auto highest_priority_supervisor_interrupt(uint64_t pending_mask) -> std::optional<std::uint32_t> {
+        constexpr uint64_t SSIP = util::bit<1>();
+        constexpr uint64_t STIP = util::bit<5>();
+        constexpr uint64_t SEIP = util::bit<9>();
+
+        if (pending_mask & SEIP)
+            return 9; // supervisor external interrupt
+        if (pending_mask & STIP)
+            return 5; // supervisor timer interrupt
+        if (pending_mask & SSIP)
+            return 1; // supervisor software interrupt
+        return -1;
+    }
+
     auto Core::handle_interrupts() -> void {
-        // If the SSTATUS.SIE flag is not set, interrupts are disabled in the Supervisor
-        // Interrupts will stil trigger when in Userspace
-        if (m_privilege_level == PrivilegeLevel::Supervisor and sstatus().get_bit(1)) {
+        const auto pending = sip() & sie();
+        if (!pending) [[likely]]
+            return;
+
+        const auto delegated = pending & mideleg(); // interrupts delegated to Supervisor by Machine
+        const auto not_delegated = pending & ~mideleg();
+
+        if (delegated) {
+            // Check S-mode global interrupt enable (sstatus.SIE)
+            if (!sstatus().get_bit(1)) {
+                // Supervisor interrupts are globally disabled; do nothing.
+                return;
+            }
+
+            // Choose highest-priority supervisor interrupt
+            const auto cause_num = highest_priority_supervisor_interrupt(delegated);
+            if (!cause_num.has_value())
+                return;
+
+            stval() = 0;
             trap();
+
             return;
         }
 
-        // Check if any of the enabled interrupts are currently pending
-        const auto pending_interrupt = sie() & sip();
-        if (m_privilege_level == PrivilegeLevel::User and pending_interrupt != 0x00) {
-            trap();
-            return;
+        if (not_delegated) {
+            std::printf("Non-delegated interrupt occurred but no Machine-mode present\n");
         }
     }
 
@@ -710,13 +751,30 @@ namespace ds::emu::riscv {
                     return {};
                 case ECallUser: // ECALL from User mode, jump to supervisor
                     set_privilege_level(PrivilegeLevel::Supervisor);
-                    // TODO: trap
                     return {};
+                case UnimplementedInstruction: // Treat unimplemented instructions the same as illegal instructions
+                    scause() = static_cast<std::uint32_t>(IllegalInstruction);
+                    break;
+                case Breakpoint:
+                    scause() = 0;
+                    break;
                 default:
-                    stval() = pc() - 4;
-                    this->trap();
                     break;
             }
+
+            switch (exception) {
+                using enum ExceptionCause;
+                case IllegalInstruction:
+                case Breakpoint:
+                case ECallSupervisor:
+                case ECallUser:
+                    stval() = pc() - 4;
+                    break;
+                default:
+                    break;
+            }
+
+            trap();
         }
 
 

@@ -35,6 +35,29 @@ namespace ds::emu::riscv {
         CoreStopped                 = 17
     };
 
+    constexpr static auto get_exception_string(ExceptionCause cause) {
+        switch (cause) {
+            using enum ExceptionCause;
+            case PCMisalign:                return "Instruction address misaligned";
+            case FetchFault:                return "Instruction access fault";
+            case IllegalInstruction:        return "Illegal instruction";
+            case Breakpoint:                return "Breakpoint";
+            case LoadMisalign:              return "Load address misaligned";
+            case LoadFault:                 return "Load access fault";
+            case StoreMisalign:             return "Store/AMO address misaligned";
+            case StoreFault:                return "Store/AMO access fault";
+            case ECallUser:                 return "Environment call from U-mode";
+            case ECallSupervisor:           return "Environment call from S-mode";
+            case FetchPageFault:            return "Instruction page fault";
+            case LoadPageFault:             return "Load page fault";
+            case StorePageFault:            return "Store/AMO page fault";
+            case UnimplementedInstruction:  return "Instruction unimplemented";
+            case CoreStopped:               return "Core stopped";
+        }
+
+        return "";
+    }
+
     enum class PrivilegeLevel {
         User,
         Supervisor,
@@ -60,7 +83,7 @@ namespace ds::emu::riscv {
 
         std::expected<void, ExceptionCause> step();
 
-        [[nodiscard]] constexpr auto get_privilege_level() const -> PrivilegeLevel {
+        [[nodiscard]] constexpr auto privilege_level() const -> PrivilegeLevel {
             return m_privilege_level;
         }
 
@@ -134,20 +157,33 @@ namespace ds::emu::riscv {
 
         auto satp()         -> auto& { return csr(0x180); }
 
+        auto mip()          -> auto& { return csr(0x344); }
+        auto mie()          -> auto& { return csr(0x304); }
+
+        auto cycle()        -> auto& { return csr(0xC00); }
+        auto time()         -> auto& { return csr(0xC01); }
+
+        auto cycleh()       -> auto& { return csr(0xC80); }
+        auto timeh()        -> auto& { return csr(0xC81); }
+
+        auto mideleg()      -> auto& { return csr(0x303); }
+
 
         auto reset() -> void {
             m_registers    = {};
             m_csrs         = {};
             m_program_counter = 0x0000'0000;
             a0() = m_hart;
+
+            mideleg() = 0xFFFF'FFFF;
+        }
+
+        [[nodiscard]] constexpr auto address_space() const -> AddressSpace<std::uint32_t>& {
+            return *m_address_space;
         }
 
         template<typename T>
-        auto read(std::uint64_t address) -> std::expected<T, ExceptionCause> {
-            if (address % alignof(T) != 0) [[unlikely]] {
-                return std::unexpected(ExceptionCause::LoadMisalign);
-            }
-
+        auto read(std::uint32_t address) -> std::expected<T, ExceptionCause> {
             T data;
             const auto result = m_address_space->read(*this, address, util::to_byte_span(data));
             switch (result) {
@@ -155,17 +191,13 @@ namespace ds::emu::riscv {
                 case Success: return data;
 
                 default:
-                case LoadAccessFault: return std::unexpected(ExceptionCause::LoadFault);
-                case LoadPageFault: return std::unexpected(ExceptionCause::LoadPageFault);
+                case LoadAccessFault: stval() = address; return std::unexpected(ExceptionCause::LoadFault);
+                case LoadPageFault:   stval() = address; return std::unexpected(ExceptionCause::LoadPageFault);
             }
         }
 
         template<typename T>
-        auto read_physical(std::uint64_t address) -> std::expected<T, ExceptionCause> {
-            if (address % alignof(T) != 0) [[unlikely]] {
-                return std::unexpected(ExceptionCause::LoadMisalign);
-            }
-
+        auto read_physical(std::uint32_t address) -> std::expected<T, ExceptionCause> {
             T data;
             const auto result = m_address_space->read_physical(address, util::to_byte_span(data));
             switch (result) {
@@ -173,13 +205,13 @@ namespace ds::emu::riscv {
                 case Success: return data;
 
                 default:
-                case LoadAccessFault: return std::unexpected(ExceptionCause::LoadFault);
-                case LoadPageFault: return std::unexpected(ExceptionCause::LoadPageFault);
+                case LoadAccessFault: stval() = address; return std::unexpected(ExceptionCause::LoadFault);
+                case LoadPageFault:   stval() = address; return std::unexpected(ExceptionCause::LoadPageFault);
             }
         }
 
         template<typename T>
-        auto fetch(std::uint64_t address) -> std::expected<T, ExceptionCause> {
+        auto fetch(std::uint32_t address) -> std::expected<T, ExceptionCause> {
             if (address % alignof(T) != 0) [[unlikely]] {
                 return std::unexpected(ExceptionCause::PCMisalign);
             }
@@ -191,13 +223,13 @@ namespace ds::emu::riscv {
                 case Success: return data;
 
                 default:
-                case LoadAccessFault: return std::unexpected(ExceptionCause::FetchFault);
-                case LoadPageFault: return std::unexpected(ExceptionCause::FetchPageFault);
+                case LoadAccessFault: stval() = address; return std::unexpected(ExceptionCause::FetchFault);
+                case LoadPageFault:   stval() = address; return std::unexpected(ExceptionCause::FetchPageFault);
             }
         }
 
         template<typename T>
-        auto fetch_physical(std::uint64_t address) -> std::expected<T, ExceptionCause> {
+        auto fetch_physical(std::uint32_t address) -> std::expected<T, ExceptionCause> {
             if (address % alignof(T) != 0) [[unlikely]] {
                 return std::unexpected(ExceptionCause::PCMisalign);
             }
@@ -209,42 +241,34 @@ namespace ds::emu::riscv {
                 case Success: return data;
 
                 default:
-                case LoadAccessFault: return std::unexpected(ExceptionCause::FetchFault);
-                case LoadPageFault: return std::unexpected(ExceptionCause::FetchPageFault);
+                case LoadAccessFault: stval() = address; return std::unexpected(ExceptionCause::FetchFault);
+                case LoadPageFault:   stval() = address; return std::unexpected(ExceptionCause::FetchPageFault);
             }
         }
 
         template<typename T>
-        auto write(std::uint64_t address, T value) -> std::expected<void, ExceptionCause> {
-            if (address % alignof(T) != 0) [[unlikely]] {
-                return std::unexpected(ExceptionCause::StoreMisalign);
-            }
-
+        auto write(std::uint32_t address, T value) -> std::expected<void, ExceptionCause> {
             const auto result = m_address_space->write(*this, address, util::to_byte_span(value));
             switch (result) {
                 using enum AccessResult;
                 case Success: return {};
 
                 default:
-                case StoreAccessFault: return std::unexpected(ExceptionCause::StoreFault);
-                case StorePageFault: return std::unexpected(ExceptionCause::StorePageFault);
+                case StoreAccessFault: stval() = address; return std::unexpected(ExceptionCause::StoreFault);
+                case StorePageFault:   stval() = address; return std::unexpected(ExceptionCause::StorePageFault);
             }
         }
 
         template<typename T>
-        auto write_physical(std::uint64_t address, T value) -> std::expected<void, ExceptionCause> {
-            if (address % alignof(T) != 0) [[unlikely]] {
-                return std::unexpected(ExceptionCause::StoreMisalign);
-            }
-
+        auto write_physical(std::uint32_t address, T value) -> std::expected<void, ExceptionCause> {
             const auto result = m_address_space->write_physical(address, util::to_byte_span(value));
             switch (result) {
                 using enum AccessResult;
-                case Success: {};
+                case Success: return {};
 
                 default:
-                case StoreAccessFault: return std::unexpected(ExceptionCause::StoreFault);
-                case StorePageFault: return std::unexpected(ExceptionCause::StorePageFault);
+                case StoreAccessFault: stval() = address; return std::unexpected(ExceptionCause::StoreFault);
+                case StorePageFault:   stval() = address; return std::unexpected(ExceptionCause::StorePageFault);
             }
         }
 

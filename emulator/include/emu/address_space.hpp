@@ -20,6 +20,7 @@ namespace ds::emu {
         StoreAccessFault,
         LoadPageFault,
         StorePageFault,
+        FetchPageFault
     };
 
     template<typename T>
@@ -43,11 +44,13 @@ namespace ds::emu {
     template<typename T>
     class AddressSpace;
 
+    enum class AccessType { Instruction, Load, Store };
+
     template<typename T>
     class AddressTranslator {
     public:
         virtual ~AddressTranslator() = default;
-        constexpr virtual auto translate(Core &core, T virtual_address) -> std::expected<T, AccessResult> = 0;
+        constexpr virtual auto translate(Core &core, T virtual_address, AccessType access_type) -> std::expected<T, AccessResult> = 0;
         constexpr virtual auto invalidate() -> void = 0;
     };
 
@@ -55,7 +58,7 @@ namespace ds::emu {
     class AddressSpace {
     public:
         constexpr auto read(Core &core, T virtual_address, std::span<std::uint8_t> buffer) -> AccessResult {
-            const auto physical_address = translate_address(core, virtual_address);
+            const auto physical_address = translate_address(core, virtual_address, AccessType::Load);
             if (!physical_address.has_value()) [[unlikely]] {
                 return AccessResult::LoadPageFault;
             }
@@ -70,7 +73,7 @@ namespace ds::emu {
         }
 
         constexpr auto write(Core &core, T virtual_address, std::span<const std::uint8_t> buffer) -> AccessResult {
-            const auto physical_address = translate_address(core, virtual_address);
+            const auto physical_address = translate_address(core, virtual_address, AccessType::Store);
             if (!physical_address.has_value()) [[unlikely]] {
                 return AccessResult::StorePageFault;
             }
@@ -129,10 +132,10 @@ namespace ds::emu {
             }
         }
 
-        constexpr auto translate_address(Core &core, T virtual_address) -> std::expected<T, AccessResult> {
+        constexpr auto translate_address(Core &core, T virtual_address, AccessType access) -> std::expected<T, AccessResult> {
             T physical_address = virtual_address;
             for (const auto &translator : m_address_translators) {
-                const auto result = translator->translate(core, physical_address);
+                const auto result = translator->translate(core, physical_address, access);
                 if (!result.has_value())
                     return result;
 

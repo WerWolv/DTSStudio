@@ -5,4 +5,4 @@ add_library(emulator STATIC
     source/riscv/core.cpp
 )
 target_include_directories(emulator PUBLIC include)
-target_compile_options(emulator PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_compile_options(emulator PRIVATE -Wall -Wextra -Werror)

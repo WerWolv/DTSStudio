@@ -12,13 +12,13 @@ namespace ds::emu::dev::riscv {
     public:
         constexpr static auto PageSize = 4_KiB;
 
-        constexpr auto translate(emu::Core &core, T virtual_address) -> std::expected<T, AccessResult> final {
+        constexpr auto translate(emu::Core &core, T virtual_address, AccessType) -> std::expected<T, AccessResult> final {
             auto &riscv_core = static_cast<emu::riscv::Core &>(core);
 
             const auto mode = riscv_core.satp().get_bit(31);
 
             // If MMU is not enabled, virtual address = physical address
-            if (mode == 0)
+            if (mode == 0) [[unlikely]]
                 return virtual_address;
 
             const auto root_page_table_page_number = util::extract_bits<0, 21>(
@@ -34,19 +34,17 @@ namespace ds::emu::dev::riscv {
         constexpr auto get_physical_address(emu::riscv::Core &core, T virtual_address, std::array<T, 2> virtual_page_numbers, T page_table_address, std::uint8_t level = 1) const -> std::expected<T, AccessResult> {
             const auto index = virtual_page_numbers[level];
             const auto entry_addr = page_table_address + index * sizeof(T);
-            const auto &entry = core.read_physical<T>(entry_addr);
-            if (!entry.has_value())
-                return std::unexpected(AccessResult::LoadPageFault);
+            T value;
+            if (const auto result = core.address_space().read_physical(entry_addr, util::to_byte_span(value)); result != AccessResult::Success) [[unlikely]]
+                return std::unexpected(result);
 
             constexpr static auto V = util::bit<0>();
             constexpr static auto R = util::bit<1>();
             constexpr static auto W = util::bit<2>();
             constexpr static auto X = util::bit<3>();
 
-            const auto value = entry.value();
-
             // V bit is not set, entry is invalid
-            if (!(value & (V)))
+            if (!(value & (V))) [[unlikely]]
                 return std::unexpected(AccessResult::LoadPageFault);
 
 
@@ -57,11 +55,10 @@ namespace ds::emu::dev::riscv {
             }
 
             // Neither readable nor executable, entry is invalid
-            if (!(value & (X | R)))
+            if (!(value & (X | R))) [[unlikely]]
                 return std::unexpected(AccessResult::LoadPageFault);
 
             // Entry is a leaf entry, construct the final physical address with it
-            const auto ppn0 = util::extract_bits<10, 19>(value);
             const auto ppn1 = util::extract_bits<20, 31>(value);
             const auto offset = virtual_address & (PageSize - 1);
 
@@ -70,6 +67,7 @@ namespace ds::emu::dev::riscv {
                 // Super Page
                 physical_address = (ppn1 << 22) | (virtual_page_numbers[0] << 12) | offset;
             } else {
+                const auto ppn0 = util::extract_bits<10, 19>(value);
                 physical_address = (ppn1 << 22) | (ppn0 << 12) | offset;
             }
 

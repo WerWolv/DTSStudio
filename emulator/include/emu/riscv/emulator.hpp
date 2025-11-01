@@ -28,12 +28,12 @@ namespace ds::emu::riscv {
             // Step the core one instruction forward
             const auto result = core.step();
             if (!result.has_value()) {
-                printf("CORE %llu encountered error %d at PC:0x%08X\n", m_current_core, result.error(), curr_pc);
-
+                const auto exception = result.error();
+                printf("[!!!] CORE %llu encountered error %d (%s) at PC:0x%08X, STVAL:0x%08X\n", m_current_core, exception, get_exception_string(exception), curr_pc, (uint32_t)core.stval());
             }
 
             // Handle SBI calls
-            if (core.get_privilege_level() == PrivilegeLevel::Machine) {
+            if (core.privilege_level() == PrivilegeLevel::Machine) {
                 const auto [error, return_value] = m_machine_mode_firmware.sbi_call(
                     core,
                     core.a7(), core.a6(),
@@ -43,6 +43,8 @@ namespace ds::emu::riscv {
                 core.a0() = static_cast<std::uint32_t>(error);
                 core.a1() = return_value;
 
+                core.scause() = 0;
+                core.sip() & ~util::bit<ExceptionCause::ECallSupervisor>();
                 core.set_privilege_level(PrivilegeLevel::Supervisor);
             }
             m_machine_mode_firmware.update(core);

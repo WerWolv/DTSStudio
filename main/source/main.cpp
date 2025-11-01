@@ -12,6 +12,9 @@ constexpr static std::uint8_t DeviceTreeBlob[] = {
     #embed "device-tree.dtb"
 };
 
+constexpr static std::uint8_t InitRamFs[] = {
+    #embed "initramfs.cpio"
+};
 
 auto main() -> int {
     using namespace ds;
@@ -34,7 +37,9 @@ auto main() -> int {
     ram.write(0x00, LinuxKernel);
 
     constexpr static auto DeviceTreeBlobLoadAddress = 512_MiB - 1_MiB;
+    constexpr static auto InitRamFsLoadAddress = 0x1F700000;
     ram.write(DeviceTreeBlobLoadAddress, DeviceTreeBlob);
+    ram.write(InitRamFsLoadAddress, InitRamFs);
     emulator.cores()[0].a1() = DeviceTreeBlobLoadAddress;
 
     for (;;) {

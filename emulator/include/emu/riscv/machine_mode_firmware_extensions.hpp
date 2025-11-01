@@ -95,18 +95,25 @@ namespace ds::emu::riscv::m_mode {
         }
 
         auto update(Core &core) -> void {
-            m_timer_value = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::high_resolution_clock::now() - m_start_time
-            ).count();
+            constexpr static auto CycleTime = (1'000'000'000 / 65'000'000) / 2;
+            m_timer_value = m_cycle_counter * CycleTime;
 
-            if (m_timer_value >= get_timer_compare_value(core))
+            core.time()   = m_timer_value & util::mask<32>();
+            core.timeh()  = m_timer_value >> 32;
+            core.cycle()  = m_cycle_counter & util::mask<32>();
+            core.cycleh() = m_cycle_counter >> 32;
+
+            if ((core.time() | (std::uint64_t(core.timeh()) << 32)) >= get_timer_compare_value(core)) [[unlikely]] {
+                core.scause() = util::bit<31>() | 5;
                 core.sip() |= util::bit<5>();
-            else
-                core.sip() &= ~util::bit<5>();
+            }
+
+            if (core.hart_id() == 0) {
+                m_cycle_counter += 1;
+            }
         }
 
         auto reset() -> void {
-            m_start_time = std::chrono::high_resolution_clock::now();
             m_timer_compare_value.clear();
         }
 
@@ -124,9 +131,8 @@ namespace ds::emu::riscv::m_mode {
         }
 
     private:
-        std::chrono::high_resolution_clock::time_point m_start_time;
-
         std::uint64_t m_timer_value = 0x00;
+        std::uint64_t m_cycle_counter = 0x00;
         std::vector<std::uint64_t> m_timer_compare_value;
     };
 
