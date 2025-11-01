@@ -27,10 +27,6 @@ namespace ds::emu::riscv {
 
             // Step the core one instruction forward
             const auto result = core.step();
-            if (!result.has_value()) {
-                const auto exception = result.error();
-                printf("[!!!] CORE %llu encountered error %d (%s) at PC:0x%08X, STVAL:0x%08X\n", m_current_core, exception, get_exception_string(exception), curr_pc, (uint32_t)core.stval());
-            }
 
             // Handle SBI calls
             if (core.privilege_level() == PrivilegeLevel::Machine) {

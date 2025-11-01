@@ -173,6 +173,7 @@ namespace ds::emu::riscv {
             m_registers    = {};
             m_csrs         = {};
             m_program_counter = 0x0000'0000;
+            m_powered_up = true;
             a0() = m_hart;
 
             mideleg() = 0xFFFF'FFFF;
@@ -309,8 +310,8 @@ namespace ds::emu::riscv {
         auto handle_misc_mem(const instr::base::type::I &instruction) -> std::expected<void, ExceptionCause>;
         auto handle_amo(const instr::base::type::R &instruction) -> std::expected<void, ExceptionCause>;
 
-        auto handle_interrupts(std::uint32_t pc) -> void;
-        auto trap(std::uint32_t pc) -> void;
+        auto handle_interrupts() -> void;
+        auto trap() -> void;
 
     private:
         using HandlerFunction = std::expected<void, ExceptionCause>(Core::*)(std::uint32_t instruction);
@@ -356,6 +357,7 @@ namespace ds::emu::riscv {
         }
 
     private:
+        bool m_powered_up = true;
         std::uint16_t m_hart = 0;
         AddressSpace<std::uint32_t> *m_address_space = nullptr;
 

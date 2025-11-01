@@ -43,6 +43,10 @@ namespace ds::emu::riscv {
                         sstatus().set_bit(5, true);    // SPIE = 1
                         return {};
                     }
+                    case 0b000100000101: { // WFI
+                        m_powered_up = false;
+                        return {};
+                    }
                     default:
                         return std::unexpected(ExceptionCause::IllegalInstruction);
                 }
@@ -661,7 +665,7 @@ namespace ds::emu::riscv {
         return -1;
     }
 
-    auto Core::handle_interrupts(std::uint32_t pc) -> void {
+    auto Core::handle_interrupts() -> void {
         const auto pending = sip() & sie();
         if (!pending) [[likely]]
             return;
@@ -686,7 +690,7 @@ namespace ds::emu::riscv {
             // Set interrupt bit
             scause() = util::bit<31>() | interrupt_index;
             stval() = 0;
-            trap(pc);
+            trap();
 
             return;
         }
@@ -696,7 +700,7 @@ namespace ds::emu::riscv {
         }
     }
 
-    auto Core::trap(std::uint32_t pc_value) -> void {
+    auto Core::trap() -> void {
         // Set SSTATUS.SPIE to SSTATUS.SIE
         sstatus().set_bit(5, sstatus().get_bit(1));
 
@@ -704,7 +708,7 @@ namespace ds::emu::riscv {
         sstatus().set_bit(8, m_privilege_level == PrivilegeLevel::Supervisor);
 
         // Set SEPC to the value of PC where the exception happened
-        sepc() = pc_value;
+        sepc() = pc();
 
         // Disable interrupts
         sstatus().set_bit(1, false);
@@ -728,12 +732,15 @@ namespace ds::emu::riscv {
     }
 
     auto Core::step() -> std::expected<void, ExceptionCause> {
-        static auto prev_privilege_level = m_privilege_level;
+        const std::uint32_t start_pc = pc();
         constexpr static auto Instructions = jumpTable<0, 1,
             Entry<instr::base::Quadrant, &Core::handle_std_instructions>
         >();
 
-        handle_interrupts(pc());
+        handle_interrupts();
+
+        if (!m_powered_up)
+            return {};
 
         std::expected<void, ExceptionCause> result;
         const auto instruction = fetch<std::uint32_t>(pc());
@@ -741,30 +748,6 @@ namespace ds::emu::riscv {
             result = Instructions(this, *instruction);
         } else {
             result = std::unexpected(instruction.error());
-        }
-
-        if (prev_privilege_level != m_privilege_level) {
-            printf("[!!!] Transitioned from ");
-            switch (prev_privilege_level) {
-                using enum PrivilegeLevel;
-                case Machine: printf("Machine"); break;
-                case Hypervisor: printf("Hypervisor"); break;
-                case Supervisor: printf("Supervisor"); break;
-                case User: printf("User"); break;
-            }
-
-            printf(" to ");
-
-            switch (m_privilege_level) {
-                using enum PrivilegeLevel;
-                case Machine: printf("Machine"); break;
-                case Hypervisor: printf("Hypervisor"); break;
-                case Supervisor: printf("Supervisor"); break;
-                case User: printf("User"); break;
-            }
-
-            printf(" (SATP:%08X)\n", (uint32_t)satp());
-            prev_privilege_level = m_privilege_level;
         }
 
         if (!result.has_value()) {
@@ -776,8 +759,9 @@ namespace ds::emu::riscv {
                     set_privilege_level(PrivilegeLevel::Machine);
                     return {};
                 case ECallUser: // ECALL from User mode, jump to supervisor
-                    set_privilege_level(PrivilegeLevel::Supervisor);
-                    return {};
+                    pc() = start_pc;
+
+                    break;
                 case UnimplementedInstruction: // Treat unimplemented instructions the same as illegal instructions
                     scause() = static_cast<std::uint32_t>(IllegalInstruction);
                     break;
@@ -785,6 +769,7 @@ namespace ds::emu::riscv {
                     scause() = 0;
                     break;
                 default:
+                    pc() = start_pc;
                     break;
             }
 
@@ -794,13 +779,13 @@ namespace ds::emu::riscv {
                 case Breakpoint:
                 case ECallSupervisor:
                 case ECallUser:
-                    stval() = pc() - 4;
+                    stval() = pc();
                     break;
                 default:
                     break;
             }
 
-            trap(pc() - 4);
+            trap();
         }
 
         return result;
