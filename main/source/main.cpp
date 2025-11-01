@@ -43,10 +43,6 @@ auto main() -> int {
     emulator.cores()[0].a1() = DeviceTreeBlobLoadAddress;
 
     for (;;) {
-        if (!emulator.step().has_value())
-            fault_count += 1;
-
-        if (fault_count > 10)
-            break;
+        emulator.step();
     }
 }
