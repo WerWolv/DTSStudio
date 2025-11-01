@@ -7,7 +7,7 @@ namespace ds::emu::riscv {
 
     auto Core::handle_system(const instr::base::type::I &instruction) -> std::expected<void, ExceptionCause> {
         const std::uint32_t old       = csr(instruction.imm);
-        const std::uint32_t write_val = x(instruction.rs1);
+        std::uint32_t write_val = x(instruction.rs1);
 
         switch (instruction.funct3) {
             case 0b000: // PRIV
@@ -30,7 +30,7 @@ namespace ds::emu::riscv {
                         m_address_space->invalidate();
                         return {};
                     case 0b000100000010: { // SRET
-                        pc() = sepc();
+                        pc() = sepc() - 4;
                         m_address_space->invalidate();
 
                         const auto spp  = sstatus().get_bit(8);
@@ -47,38 +47,35 @@ namespace ds::emu::riscv {
                         return std::unexpected(ExceptionCause::IllegalInstruction);
                 }
             case 0b001: // CSRRW
+                if (instruction.imm == 0x180) {
+                    write_val &= ~(util::mask<9>() << 22);
+                }
                 csr(instruction.imm) = write_val;
-                if (instruction.rd != 0)
-                    x(instruction.rd) = old;
+                x(instruction.rd) = old;
                 return {};
             case 0b101: // CSRRWI
-                csr(instruction.imm) = instruction.rs1; // uimm[4:0]
-                if (instruction.rd != 0)
-                    x(instruction.rd) = old;
+                csr(instruction.imm) = instruction.rs1;
+                x(instruction.rd) = old;
                 return {};
             case 0b010: // CSRRS
                 if (instruction.rs1 != 0)
                     csr(instruction.imm) = old | write_val;
-                if (instruction.rd != 0)
-                    x(instruction.rd) = old;
+                x(instruction.rd) = old;
                 return {};
             case 0b110: // CSRRSI
                 if (instruction.rs1 != 0)
                     csr(instruction.imm) = old | instruction.rs1;
-                if (instruction.rd != 0)
-                    x(instruction.rd) = old;
+                x(instruction.rd) = old;
                 return {};
             case 0b011: // CSRRC
                 if (instruction.rs1 != 0)
                     csr(instruction.imm) = old & ~write_val;
-                if (instruction.rd != 0)
-                    x(instruction.rd) = old;
+                x(instruction.rd) = old;
                 return {};
             case 0b111: // CSRRCI
                 if (instruction.rs1 != 0)
                     csr(instruction.imm) = old & ~instruction.rs1;
-                if (instruction.rd != 0)
-                    x(instruction.rd) = old;
+                x(instruction.rd) = old;
                 return {};
             default:
                 return std::unexpected(ExceptionCause::UnimplementedInstruction);
@@ -664,7 +661,7 @@ namespace ds::emu::riscv {
         return -1;
     }
 
-    auto Core::handle_interrupts() -> void {
+    auto Core::handle_interrupts(std::uint32_t pc) -> void {
         const auto pending = sip() & sie();
         if (!pending) [[likely]]
             return;
@@ -684,8 +681,12 @@ namespace ds::emu::riscv {
             if (!cause_num.has_value())
                 return;
 
+            const auto interrupt_index = std::countr_zero(pending);
+
+            // Set interrupt bit
+            scause() = util::bit<31>() | interrupt_index;
             stval() = 0;
-            trap();
+            trap(pc);
 
             return;
         }
@@ -695,7 +696,7 @@ namespace ds::emu::riscv {
         }
     }
 
-    auto Core::trap() -> void {
+    auto Core::trap(std::uint32_t pc_value) -> void {
         // Set SSTATUS.SPIE to SSTATUS.SIE
         sstatus().set_bit(5, sstatus().get_bit(1));
 
@@ -703,7 +704,7 @@ namespace ds::emu::riscv {
         sstatus().set_bit(8, m_privilege_level == PrivilegeLevel::Supervisor);
 
         // Set SEPC to the value of PC where the exception happened
-        sepc() = pc() - 4;
+        sepc() = pc_value;
 
         // Disable interrupts
         sstatus().set_bit(1, false);
@@ -727,11 +728,12 @@ namespace ds::emu::riscv {
     }
 
     auto Core::step() -> std::expected<void, ExceptionCause> {
+        static auto prev_privilege_level = m_privilege_level;
         constexpr static auto Instructions = jumpTable<0, 1,
             Entry<instr::base::Quadrant, &Core::handle_std_instructions>
         >();
 
-        handle_interrupts();
+        handle_interrupts(pc());
 
         std::expected<void, ExceptionCause> result;
         const auto instruction = fetch<std::uint32_t>(pc());
@@ -739,6 +741,30 @@ namespace ds::emu::riscv {
             result = Instructions(this, *instruction);
         } else {
             result = std::unexpected(instruction.error());
+        }
+
+        if (prev_privilege_level != m_privilege_level) {
+            printf("[!!!] Transitioned from ");
+            switch (prev_privilege_level) {
+                using enum PrivilegeLevel;
+                case Machine: printf("Machine"); break;
+                case Hypervisor: printf("Hypervisor"); break;
+                case Supervisor: printf("Supervisor"); break;
+                case User: printf("User"); break;
+            }
+
+            printf(" to ");
+
+            switch (m_privilege_level) {
+                using enum PrivilegeLevel;
+                case Machine: printf("Machine"); break;
+                case Hypervisor: printf("Hypervisor"); break;
+                case Supervisor: printf("Supervisor"); break;
+                case User: printf("User"); break;
+            }
+
+            printf(" (SATP:%08X)\n", (uint32_t)satp());
+            prev_privilege_level = m_privilege_level;
         }
 
         if (!result.has_value()) {
@@ -774,9 +800,8 @@ namespace ds::emu::riscv {
                     break;
             }
 
-            trap();
+            trap(pc() - 4);
         }
-
 
         return result;
     }

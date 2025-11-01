@@ -103,8 +103,7 @@ namespace ds::emu::riscv::m_mode {
             core.cycle()  = m_cycle_counter & util::mask<32>();
             core.cycleh() = m_cycle_counter >> 32;
 
-            if ((core.time() | (std::uint64_t(core.timeh()) << 32)) >= get_timer_compare_value(core)) [[unlikely]] {
-                core.scause() = util::bit<31>() | 5;
+            if (m_timer_value >= get_timer_compare_value(core)) [[unlikely]] {
                 core.sip() |= util::bit<5>();
             }
 

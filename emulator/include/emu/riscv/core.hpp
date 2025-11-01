@@ -184,6 +184,10 @@ namespace ds::emu::riscv {
 
         template<typename T>
         auto read(std::uint32_t address) -> std::expected<T, ExceptionCause> {
+            if (address % alignof(T) != 0) [[unlikely]] {
+                stval() = address;
+                return std::unexpected(ExceptionCause::LoadMisalign);
+            }
             T data;
             const auto result = m_address_space->read(*this, address, util::to_byte_span(data));
             switch (result) {
@@ -198,6 +202,10 @@ namespace ds::emu::riscv {
 
         template<typename T>
         auto read_physical(std::uint32_t address) -> std::expected<T, ExceptionCause> {
+            if (address % alignof(T) != 0) [[unlikely]] {
+                stval() = address;
+                return std::unexpected(ExceptionCause::LoadMisalign);
+            }
             T data;
             const auto result = m_address_space->read_physical(address, util::to_byte_span(data));
             switch (result) {
@@ -213,6 +221,7 @@ namespace ds::emu::riscv {
         template<typename T>
         auto fetch(std::uint32_t address) -> std::expected<T, ExceptionCause> {
             if (address % alignof(T) != 0) [[unlikely]] {
+                stval() = address;
                 return std::unexpected(ExceptionCause::PCMisalign);
             }
 
@@ -231,6 +240,7 @@ namespace ds::emu::riscv {
         template<typename T>
         auto fetch_physical(std::uint32_t address) -> std::expected<T, ExceptionCause> {
             if (address % alignof(T) != 0) [[unlikely]] {
+                stval() = address;
                 return std::unexpected(ExceptionCause::PCMisalign);
             }
 
@@ -248,6 +258,11 @@ namespace ds::emu::riscv {
 
         template<typename T>
         auto write(std::uint32_t address, T value) -> std::expected<void, ExceptionCause> {
+            if (address % alignof(T) != 0) [[unlikely]] {
+                stval() = address;
+                return std::unexpected(ExceptionCause::StoreMisalign);
+            }
+
             const auto result = m_address_space->write(*this, address, util::to_byte_span(value));
             switch (result) {
                 using enum AccessResult;
@@ -261,6 +276,11 @@ namespace ds::emu::riscv {
 
         template<typename T>
         auto write_physical(std::uint32_t address, T value) -> std::expected<void, ExceptionCause> {
+            if (address % alignof(T) != 0) [[unlikely]] {
+                stval() = address;
+                return std::unexpected(ExceptionCause::StoreMisalign);
+            }
+
             const auto result = m_address_space->write_physical(address, util::to_byte_span(value));
             switch (result) {
                 using enum AccessResult;
@@ -289,8 +309,8 @@ namespace ds::emu::riscv {
         auto handle_misc_mem(const instr::base::type::I &instruction) -> std::expected<void, ExceptionCause>;
         auto handle_amo(const instr::base::type::R &instruction) -> std::expected<void, ExceptionCause>;
 
-        auto handle_interrupts() -> void;
-        auto trap() -> void;
+        auto handle_interrupts(std::uint32_t pc) -> void;
+        auto trap(std::uint32_t pc) -> void;
 
     private:
         using HandlerFunction = std::expected<void, ExceptionCause>(Core::*)(std::uint32_t instruction);
