@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "frontend",
+  "app": {
+    "windows": [
+      {
+        "title": " ",
+        "width": 1280,
+        "height": 720,
+        "decorations": true,
+        "shadow": true,
+        "transparent": true,
+        "titleBarStyle": "Overlay",
+        "trafficLightPosition": { "x": 10, "y": 20 },
+        "windowEffects": {
+          "effects": [ "micaDark" ]
+        }
+      }
+    ]
+  }
+}
