@@ -40,7 +40,7 @@ namespace ds::emu::riscv {
                 core.a1() = return_value;
 
                 core.scause() = 0;
-                core.sip() & ~util::bit<ExceptionCause::ECallSupervisor>();
+                core.sip() &= ~util::bit<ExceptionCause::ECallSupervisor>();
                 core.set_privilege_level(PrivilegeLevel::Supervisor);
             }
             m_machine_mode_firmware.update(core);

@@ -2,6 +2,7 @@
 
 #include <emu/address_space.hpp>
 #include <emu/riscv/core.hpp>
+#include <unordered_map>
 
 namespace ds::emu::dev::riscv {
 
@@ -28,7 +29,19 @@ namespace ds::emu::dev::riscv {
             const auto vpn0 = util::extract_bits<12,21>(virtual_address);
             const auto vpn1 = util::extract_bits<22,31>(virtual_address);
 
-            return get_physical_address(r, virtual_address, { vpn0, vpn1 }, root_page_table, 1, access);
+            const auto virtual_page_address = virtual_address & ~(PageSize - 1);
+            const auto offset = virtual_address & (PageSize - 1);
+            if (auto it = m_tlb.find(virtual_page_address); it != m_tlb.end()) {
+                // TLB hit
+                const T physical_page_address = it->second;
+                return physical_page_address | offset;
+            } else {
+                // TLB miss
+                auto physical_address = get_physical_address(r, virtual_address, { vpn0, vpn1 }, root_page_table, 1, access);
+                if (physical_address.has_value())
+                    m_tlb.emplace(virtual_page_address, physical_address.value() & ~(PageSize - 1));
+                return physical_address;
+            }
         }
 
         constexpr auto get_physical_address(emu::riscv::Core &core, T va,
@@ -130,20 +143,24 @@ namespace ds::emu::dev::riscv {
             const uint32_t ppn0 = util::extract_bits<10,19>(page_table_entry);
             const T offset = va & (PageSize - 1);
 
-            T physical_address;
+            T physical_page_address;
             if (level == 1) {
                 // 4 MB superpage
-                physical_address = (static_cast<T>(ppn1) << 22) | (static_cast<T>(vpns[0]) << 12) | offset;
+                physical_page_address = (static_cast<T>(ppn1) << 22) | (static_cast<T>(vpns[0]) << 12);
             } else {
-                physical_address = (static_cast<T>(ppn1) << 22) | (static_cast<T>(ppn0) << 12) | offset;
+                physical_page_address = (static_cast<T>(ppn1) << 22) | (static_cast<T>(ppn0) << 12);
             }
 
-            return physical_address;
+            m_tlb[entry_addr] = physical_page_address;
+            return physical_page_address | offset;
         }
 
         constexpr auto invalidate() -> void final {
-
+            m_tlb.clear();
         }
+
+    private:
+        std::unordered_map<std::uint32_t, std::uint32_t> m_tlb;
     };
 
 }

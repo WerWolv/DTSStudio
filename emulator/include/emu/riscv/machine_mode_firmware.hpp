@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <bit>
 #include <emu/riscv/core.hpp>
 
 namespace ds::emu::riscv::m_mode {

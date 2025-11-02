@@ -17,6 +17,7 @@ constexpr static std::uint8_t InitRamFs[] = {
 };
 
 auto main() -> int {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
     using namespace ds;
     using namespace ds::literals;
 
