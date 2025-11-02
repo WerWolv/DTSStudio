@@ -1,5 +1,11 @@
+use std::thread;
+use std::thread::{JoinHandle, Thread};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
+use emulator;
+
+static mut EMULATOR_THREADS: Vec<JoinHandle<()>> = Vec::new();
+
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,6 +23,7 @@ fn write_terminal_data(app: AppHandle, terminal_id: &str, text: &str) {
 }
 
 pub fn run() {
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![])
