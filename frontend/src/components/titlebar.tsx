@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Button } from "@/components/ui/button";
+import { MainMenuBar } from "@/components/main_menu_bar";
 import { VscChromeClose, VscChromeMaximize, VscChromeMinimize, VscChromeRestore } from "react-icons/vsc"
 
 const appWindow = getCurrentWindow();
@@ -48,10 +49,11 @@ function MaximizeRestoreButton() {
 export function Titlebar() {
   return (
     <div
-      className="fixed inset-x-0 top-0 h-10 select-none border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+      className="inset-x-0 top-0 h-10 select-none border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60"
     >
       <div className="flex h-full items-center justify-between pl-3" data-tauri-drag-region>
         <div className="text-xs text-muted-foreground font-bold">DTS Studio</div>
+        <MainMenuBar/>
         <div className="ml-auto flex items-center">
           <Button
             size="icon"

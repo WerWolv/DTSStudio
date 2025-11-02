@@ -64,5 +64,11 @@
   }
   body {
     @apply bg-background text-foreground;
+    overflow: hidden;
+    user-select: none;
   }
+}
+
+.xterm .xterm-viewport {
+  overflow-y: overlay !important;
 }

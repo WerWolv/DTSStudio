@@ -1,14 +1,25 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
+use serde::Serialize;
+use tauri::{AppHandle, Emitter};
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TerminalData<'a> {
+    terminal_id: &'a str,
+    data: &'a str,
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[tauri::command]
+fn write_terminal_data(app: AppHandle, terminal_id: &str, text: &str) {
+    app.emit("write-terminal", TerminalData {
+        terminal_id,
+        data: text
+    }).expect("???");
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
