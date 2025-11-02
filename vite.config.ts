@@ -10,8 +10,12 @@ export default defineConfig(async () => ({
   plugins: [react()],
   resolve: {
     alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "@": fileURLToPath(new URL("./frontend", import.meta.url)),
     },
+  },
+  root: "frontend",
+  build: {
+      outDir: "../build"
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
@@ -31,8 +35,8 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell Vite to ignore watching `main`
+      ignored: ["**/main/**"],
     },
   },
 }));

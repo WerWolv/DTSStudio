@@ -13,11 +13,11 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "baseUrl": ".",
+    "baseUrl": "frontend",
     "paths": {
-      "@/*": ["src/*"],
-      "@/components/*": ["src/components/*"],
-      "@/lib/*": ["src/lib/*"]
+      "@/*": ["frontend/*"],
+      "@/components/*": ["frontend/components/*"],
+      "@/lib/*": ["frontend/lib/*"]
     },
     "types": ["node"],
 
@@ -27,6 +27,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"],
+  "include": ["frontend"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri dev --config main/tauri.conf.json"
   },
   "dependencies": {
     "@radix-ui/react-menubar": "^1.1.16",
