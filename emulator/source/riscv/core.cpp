@@ -673,6 +673,8 @@ namespace ds::emu::riscv {
         const auto delegated = pending & mideleg(); // interrupts delegated to Supervisor by Machine
         const auto not_delegated = pending & ~mideleg();
 
+        m_powered_up = true;
+
         if (delegated) {
             // Check S-mode global interrupt enable (sstatus.SIE)
             if (!sstatus().get_bit(1)) {
