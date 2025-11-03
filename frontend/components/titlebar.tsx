@@ -11,7 +11,6 @@ function MaximizeRestoreButton() {
   const [isMax, setIsMax] = useState(false);
 
   const refreshMaxState = useCallback(async () => {
-    console.log("Refreshing app window " + await appWindow.isMaximized());
     setIsMax(await appWindow.isMaximized());
   }, []);
 

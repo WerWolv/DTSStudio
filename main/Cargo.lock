@@ -787,7 +787,7 @@ dependencies = [
 name = "dts_studio"
 version = "0.1.0"
 dependencies = [
- "emulator",
+ "interface",
  "serde",
  "serde_json",
  "tauri",
@@ -827,13 +827,6 @@ name = "embed_plist"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ef6b89e5b37196644d8796de5268852ff179b44e96276cf4290264843743bb7"
-
-[[package]]
-name = "emulator"
-version = "0.1.0"
-dependencies = [
- "cmake",
-]
 
 [[package]]
 name = "endi"
@@ -1703,6 +1696,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a588916bfdfd92e71cacef98a63d9b1f0d74d6599980d11894290e7ddefffcf7"
 dependencies = [
  "cfb",
+]
+
+[[package]]
+name = "interface"
+version = "0.1.0"
+dependencies = [
+ "cmake",
 ]
 
 [[package]]

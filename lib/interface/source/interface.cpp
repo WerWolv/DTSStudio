@@ -1,3 +1,4 @@
+#include <thread>
 #include <emu/riscv/emulator.hpp>
 #include <emu/literals.hpp>
 #include <emu/devices/ram.hpp>
@@ -5,16 +6,18 @@
 #include <emu/devices/riscv/mmu.hpp>
 
 constexpr static std::uint8_t LinuxKernel[] = {
-#embed "Image"
+    #embed "Image"
 };
 
 constexpr static std::uint8_t DeviceTreeBlob[] = {
-#embed "device-tree.dtb"
+    #embed "device-tree.dtb"
 };
 
 constexpr static std::uint8_t InitRamFs[] = {
-#embed "initramfs.cpio"
+    #embed "initramfs.cpio"
 };
+
+extern "C" void send_terminal_data(const char* terminal_id, const char* text);
 
 namespace ds::emu::ffi {
 
@@ -24,6 +27,11 @@ namespace ds::emu::ffi {
     struct Emulator {
         Emulator() : ram(512_MiB) {
             std::setvbuf(stdout, nullptr, _IONBF, 0);
+
+            uart8250.output_callback([](std::uint8_t c) {
+                const std::array buffer = { char(c), char() };
+                send_terminal_data("linux-terminal", buffer.data());
+            });
 
             emulator.address_space().map(0x0000'0000, &ram);
             emulator.address_space().map(0xF400'0000, &uart8250);
@@ -51,16 +59,31 @@ namespace ds::emu::ffi {
         dev::riscv::MMU<std::uint32_t> riscv_mmu;
     };
 
-    extern "C" Emulator* create() {
-        return new Emulator();
-    }
+}
 
-    extern "C" void destroy(Emulator *emulator) {
-        delete emulator;
-    }
+static std::jthread s_emulator_thread;
 
-    extern "C" void step(Emulator *emulator) {
-        emulator->step();
-    }
+extern "C" void set_device_tree_source(const char *source, std::size_t length) {
 
+}
+
+extern "C" [[gnu::visibility("default")]] bool is_emulation_running() {
+    return !s_emulator_thread.get_stop_token().stop_requested();
+}
+
+extern "C" [[gnu::visibility("default")]] void start_emulation() {
+    s_emulator_thread = std::jthread([](const std::stop_token &stop_token) {
+        ds::emu::ffi::Emulator emulator;
+        while (!stop_token.stop_requested()) {
+            emulator.step();
+        }
+    });
+}
+
+extern "C" [[gnu::visibility("default")]] void stop_emulation() {
+    if (!is_emulation_running())
+        return;
+
+    s_emulator_thread.request_stop();
+    s_emulator_thread.join();
 }

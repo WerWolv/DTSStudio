@@ -33,6 +33,10 @@ namespace ds::emu::dev {
             m_registers.LSR = util::bit<5>() | util::bit<6>(); // THRE and TSRE bit
         }
 
+        void output_callback(std::function<void(std::uint8_t)> callback) {
+            m_registers.ReceiveTransmitBuffer.write_callback = std::move(callback);
+        }
+
     private:
         constexpr auto get_register(Offset offset) -> RegisterBase<std::uint8_t>* {
             switch (offset) {
@@ -66,7 +70,7 @@ namespace ds::emu::dev {
             InputOutputRegister(Registers *registers){}
             constexpr auto operator=(Type value) -> InputOutputRegister& final {
                 if (value != '\r') [[likely]]
-                    std::putchar(value);
+                    write_callback(value);
 
                 return *this;
             }
@@ -74,6 +78,8 @@ namespace ds::emu::dev {
             constexpr operator Type() const final {
                 return 0x00;
             }
+
+            std::function<void(Type)> write_callback;
         };
 
         struct Registers {

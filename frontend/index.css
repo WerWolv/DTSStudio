@@ -44,4 +44,7 @@
 
 .xterm .xterm-viewport {
   overflow-y: overlay !important;
+  scrollbar-gutter: stable; /* reserves space when scrolling is locked */
+  scrollbar-width: thin; /* makes scrollbar thinner. Wouldn't set it to `none` because of accessibility reasons */
+  scrollbar-color: lightgray black; /* custom colors makes scrollbar blend in  */
 }
