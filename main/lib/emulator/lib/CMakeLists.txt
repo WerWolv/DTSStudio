@@ -11,4 +11,4 @@ add_library(emulator STATIC
 target_include_directories(emulator PUBLIC include)
 target_compile_options(emulator PRIVATE --embed-dir=${CMAKE_CURRENT_SOURCE_DIR}/resources)
 
-install(TARGETS emulator DESTINATION ".")
+install(TARGETS emulator DESTINATION "${CMAKE_INSTALL_PREFIX}/.")
